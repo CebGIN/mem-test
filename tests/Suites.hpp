@@ -9,6 +9,7 @@ namespace memtest::test {
 // argv para que CTest registre un test por suite.
 Suite domain_suite();
 Suite fake_controller_suite();
+Suite main_scene_suite();
 
 }  // namespace memtest::test
 

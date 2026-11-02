@@ -49,10 +49,16 @@ target_link_libraries(memtest_core PUBLIC Threads::Threads)
 memtest_target_warnings(memtest_core)
 
 # --- Aplicación TUI --------------------------------------------------------------
-add_executable(mem-test src/main.cpp)
-target_link_libraries(mem-test PRIVATE
+# La capa ui/ solo depende de IExperimentController y domain/; se separa en su
+# propia librería para que la prueben tanto la app como los tests headless.
+add_library(memtest_ui STATIC src/ui/MainScene.cpp)
+target_link_libraries(memtest_ui PUBLIC
     memtest_core
     GuayabaTUIEngine::GuayabaTUIEngine)
+memtest_target_warnings(memtest_ui)
+
+add_executable(mem-test src/main.cpp)
+target_link_libraries(mem-test PRIVATE memtest_ui)
 memtest_target_warnings(mem-test)
 
 # --- Proceso hijo -----------------------------------------------------------------
@@ -66,10 +72,12 @@ enable_testing()
 add_executable(memtest_tests
     tests/main.cpp
     tests/test_domain.cpp
-    tests/test_fake_controller.cpp)
+    tests/test_fake_controller.cpp
+    tests/test_main_scene.cpp)
 target_include_directories(memtest_tests PRIVATE tests)
-target_link_libraries(memtest_tests PRIVATE memtest_core)
+target_link_libraries(memtest_tests PRIVATE memtest_core memtest_ui)
 memtest_target_warnings(memtest_tests)
 
 add_test(NAME domain COMMAND memtest_tests domain)
 add_test(NAME fake_controller COMMAND memtest_tests fake_controller)
+add_test(NAME main_scene COMMAND memtest_tests main_scene)
