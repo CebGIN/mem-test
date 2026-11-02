@@ -39,10 +39,13 @@ endfunction()
 # memtest_core no incluye Guayaba: dominio, core, métricas, límites, runtime,
 # workloads, proceso, app y el controlador fake se prueban sin terminal.
 add_library(memtest_core STATIC
+    src/app/FakeExperimentController.cpp
     src/core/SystemInfo.cpp
     src/domain/Validation.cpp
     src/metrics/ProcFs.cpp)
 target_include_directories(memtest_core PUBLIC src)
+find_package(Threads REQUIRED)
+target_link_libraries(memtest_core PUBLIC Threads::Threads)
 memtest_target_warnings(memtest_core)
 
 # --- Aplicación TUI --------------------------------------------------------------
@@ -57,9 +60,11 @@ enable_testing()
 
 add_executable(memtest_tests
     tests/main.cpp
-    tests/test_domain.cpp)
+    tests/test_domain.cpp
+    tests/test_fake_controller.cpp)
 target_include_directories(memtest_tests PRIVATE tests)
 target_link_libraries(memtest_tests PRIVATE memtest_core)
 memtest_target_warnings(memtest_tests)
 
 add_test(NAME domain COMMAND memtest_tests domain)
+add_test(NAME fake_controller COMMAND memtest_tests fake_controller)

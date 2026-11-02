@@ -8,6 +8,7 @@ namespace memtest::test {
 // Cada archivo de pruebas expone su suite; tests/main.cpp la selecciona por
 // argv para que CTest registre un test por suite.
 Suite domain_suite();
+Suite fake_controller_suite();
 
 }  // namespace memtest::test
 
