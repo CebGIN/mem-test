@@ -6,7 +6,7 @@ interfaz TUI.
 
 ## Clonar
 
-GuayabaTUIEngine es un submódulo de Git, fijado en el tag `v1.2.1-alpha`:
+GuayabaTUIEngine es un submódulo de Git, fijado en el tag `v1.3.0-alpha`:
 
 ```bash
 git clone --recurse-submodules <url-del-repositorio>
