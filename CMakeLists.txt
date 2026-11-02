@@ -55,6 +55,11 @@ target_link_libraries(mem-test PRIVATE
     GuayabaTUIEngine::GuayabaTUIEngine)
 memtest_target_warnings(mem-test)
 
+# --- Proceso hijo -----------------------------------------------------------------
+add_executable(mem-test-worker src/worker/main.cpp)
+target_link_libraries(mem-test-worker PRIVATE memtest_core)
+memtest_target_warnings(mem-test-worker)
+
 # --- Pruebas ---------------------------------------------------------------------
 enable_testing()
 
