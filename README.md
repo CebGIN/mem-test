@@ -1,8 +1,32 @@
-# mem-test
+# mem-test · Laboratorio de concurrencia y memoria
 
-Proyecto base para el Laboratorio de concurrencia y memoria, usando
-[GuayabaTUIEngine](https://github.com/CebGIN/GuayabaTUIEngine) como motor de
-interfaz TUI.
+Aplicación TUI para Linux que configura, ejecuta, detiene y compara experimentos
+controlados de concurrencia y memoria. La carga corre en un proceso hijo aislado;
+el proceso principal muestrea `/proc/<pid>` y presenta los resultados sin
+bloquearse ni arriesgar la sesión.
+
+Proyecto de la materia Sistemas Operativos. Interfaz construida con
+[GuayabaTUIEngine](https://github.com/CebGIN/GuayabaTUIEngine).
+
+## Estado
+
+**Fase de diseño.** Los contratos, la arquitectura, el plan de trabajo y el
+diagrama están congelados en `docs/`. La implementación se desarrolla según ese
+plan; el `src/main.cpp` actual es solo el esqueleto de integración del motor.
+
+| Documento | Contenido |
+|---|---|
+| [`docs/Requerimientos.md`](docs/Requerimientos.md) | Enunciado y pruebas exigidas |
+| [`docs/Arquitectura.md`](docs/Arquitectura.md) | ADRs, componentes, interfaces, protocolo, medición, límites y pruebas |
+| [`docs/diagrama.drawio`](docs/diagrama.drawio) | Componentes, clases, secuencia, estados y leyenda |
+
+## Requisitos
+
+- Linux (el proyecto usa `posix_spawn`, señales y `/proc`).
+- CMake 3.14 o superior.
+- Compilador con C++17.
+- Git, para el submódulo del motor.
+- Opcional: draw.io 24 o superior para editar/exportar el diagrama.
 
 ## Clonar
 
@@ -18,19 +42,97 @@ Si el repositorio ya estaba clonado:
 git submodule update --init --recursive
 ```
 
-## Compilacion
+## Compilar
 
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/mem-test
 ```
 
-## Integracion
+Targets previstos:
+
+| Target | Descripción |
+|---|---|
+| `mem-test` | Aplicación TUI |
+| `mem-test-worker` | Proceso hijo que aplica límites y ejecuta la carga |
+| `memtest_tests` | Pruebas headless registradas en CTest |
 
 El motor se agrega como subdirectorio de CMake y se enlaza como
-`GuayabaTUIEngine::GuayabaTUIEngine`. La API publica queda disponible con:
+`GuayabaTUIEngine::GuayabaTUIEngine`. La API pública queda disponible con:
 
 ```cpp
 #include <guayaba/Guayaba.hpp>
 ```
+
+## Ejecutar
+
+```bash
+./build/mem-test
+```
+
+El worker no se lanza a mano en el uso normal: lo crea el supervisor. Para
+diagnóstico o para probar límites:
+
+```bash
+./build/mem-test-worker --probe
+```
+
+El worker lee una configuración `clave=valor` por `stdin`, escribe eventos por
+`stdout` y no abre ninguna interfaz.
+
+La aplicación exporta dos CSV en `resultados/`:
+
+- `resumen_YYYYMMDD-HHMMSS.csv`: una fila por ejecución.
+- `detalle_<run_id>.csv`: la serie temporal de la ejecución.
+
+## Pruebas
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Las pruebas son headless, no requieren red ni root y no dependen de Guayaba.
+Las que necesitan un límite del sistema operativo se saltan si el entorno no lo
+permite.
+
+## Diagrama
+
+Páginas del diagrama:
+
+1. **Componentes**: frontera UI/worker, módulos y contratos compartidos.
+2. **Clases · Dominio**: configuración, métricas, límites y resultados.
+3. **Clases · Servicios**: interfaces, implementaciones y colaboradores.
+4. **Secuencia**: orden de mensajes de una ejecución y salida por Detener.
+5. **Estados**: máquina de estados de una ejecución.
+6. **Leyenda**: notación UML, visibilidad y tipos de relación.
+
+Las vistas previas en PNG están en [`docs/diagramas/README.md`](docs/diagramas/README.md).
+
+## Estructura
+
+```text
+src/
+  domain/     Tipos, enums y validación pura
+  core/       Guardrails, historial, CSV, información del sistema
+  runtime/    Pools de hilos, cola de tareas, cancelación
+  workload/   Concurrencia, CPU, memoria y contador compartido
+  metrics/    Lectura y parseo de /proc
+  limits/     setrlimit y sondeo de capacidades
+  process/    posix_spawn, pipes, señales y protocolo
+  app/        Controlador, runner, historial y mocks
+  ui/         Escenas, formularios, paneles y gráficas
+  worker/     Punto de entrada del proceso hijo
+tests/        Pruebas headless con CTest
+docs/         Requerimientos, arquitectura y diagrama
+```
+
+## Seguridad
+
+- La carga nunca se ejecuta en el proceso de la TUI.
+- Los guardrails limitan memoria, hilos, duración y cantidad de ejecuciones.
+- El worker se crea en un grupo de procesos propio y se limpia con
+  `PR_SET_PDEATHSIG` y `SIGKILL` si no responde.
+- La aplicación no está diseñada para agotar la memoria del equipo: el tope por
+  defecto es el 25 % de la RAM, con un máximo de 1 GiB.
+- Si un límite no se puede aplicar, se informa como `NotApplied` o
+  `Unsupported`; la ejecución no se presenta como limitada.

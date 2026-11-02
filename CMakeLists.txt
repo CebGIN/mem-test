@@ -24,5 +24,11 @@ add_subdirectory(
     "${GUAYABA_ENGINE_DIR}"
     "${CMAKE_BINARY_DIR}/_deps/GuayabaTUIEngine")
 
+add_library(memtest_core STATIC
+    src/metrics/ProcFs.cpp)
+target_include_directories(memtest_core PUBLIC src)
+
 add_executable(mem-test src/main.cpp)
-target_link_libraries(mem-test PRIVATE GuayabaTUIEngine::GuayabaTUIEngine)
+target_link_libraries(mem-test PRIVATE
+    memtest_core
+    GuayabaTUIEngine::GuayabaTUIEngine)
