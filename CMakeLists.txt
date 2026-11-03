@@ -54,7 +54,9 @@ add_library(memtest_core STATIC
     src/metrics/MetricsSourceFactory.cpp
     src/metrics/ProcFs.cpp
     src/metrics/ProcMetricsSource.cpp
-    src/runtime/NativeThreadPool.cpp)
+    src/runtime/NativeThreadPool.cpp
+    src/runtime/TaskPool.cpp
+    src/runtime/WorkerPoolFactory.cpp)
 target_include_directories(memtest_core PUBLIC src)
 find_package(Threads REQUIRED)
 target_link_libraries(memtest_core PUBLIC Threads::Threads)
@@ -85,7 +87,8 @@ add_executable(memtest_tests
     tests/main.cpp
     tests/test_domain.cpp
     tests/test_fake_controller.cpp
-    tests/test_main_scene.cpp)
+    tests/test_main_scene.cpp
+    tests/test_worker_pool.cpp)
 target_include_directories(memtest_tests PRIVATE tests)
 target_link_libraries(memtest_tests PRIVATE memtest_core memtest_ui)
 memtest_target_warnings(memtest_tests)
@@ -93,6 +96,7 @@ memtest_target_warnings(memtest_tests)
 add_test(NAME domain COMMAND memtest_tests domain)
 add_test(NAME fake_controller COMMAND memtest_tests fake_controller)
 add_test(NAME main_scene COMMAND memtest_tests main_scene)
+add_test(NAME worker_pool COMMAND memtest_tests worker_pool)
 
 # Pruebas standalone de métricas y límites (WP1). Incluyen su propio main()
 # porque test_limits se relanza con --child para aplicar límites al proceso.
