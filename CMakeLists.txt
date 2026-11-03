@@ -58,7 +58,9 @@ add_library(memtest_core STATIC
     src/runtime/TaskPool.cpp
     src/runtime/WorkerPoolFactory.cpp
     src/workload/ConcurrencyWorkload.cpp
-    src/workload/CpuLimitWorkload.cpp)
+    src/workload/CpuLimitWorkload.cpp
+    src/workload/MemoryPressureWorkload.cpp
+    src/workload/MemoryRegion.cpp)
 target_include_directories(memtest_core PUBLIC src)
 find_package(Threads REQUIRED)
 target_link_libraries(memtest_core PUBLIC Threads::Threads)
