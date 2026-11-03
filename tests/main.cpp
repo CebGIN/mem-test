@@ -9,6 +9,7 @@ int main(int argc, char** argv) {
         {"domain", memtest::test::domain_suite},
         {"fake_controller", memtest::test::fake_controller_suite},
         {"main_scene", memtest::test::main_scene_suite},
+        {"worker_pool", memtest::test::worker_pool_suite},
     };
 
     if (argc != 2) {

@@ -10,6 +10,7 @@ namespace memtest::test {
 Suite domain_suite();
 Suite fake_controller_suite();
 Suite main_scene_suite();
+Suite worker_pool_suite();
 
 }  // namespace memtest::test
 
