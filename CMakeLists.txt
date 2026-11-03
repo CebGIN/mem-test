@@ -42,7 +42,8 @@ add_library(memtest_core STATIC
     src/app/FakeExperimentController.cpp
     src/core/SystemInfo.cpp
     src/domain/Validation.cpp
-    src/metrics/ProcFs.cpp)
+    src/metrics/ProcFs.cpp
+    src/runtime/NativeThreadPool.cpp)
 target_include_directories(memtest_core PUBLIC src)
 find_package(Threads REQUIRED)
 target_link_libraries(memtest_core PUBLIC Threads::Threads)

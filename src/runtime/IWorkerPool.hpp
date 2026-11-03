@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include "domain/Types.hpp"
 #include "runtime/CancellationToken.hpp"
 
 namespace memtest {
