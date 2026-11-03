@@ -49,7 +49,9 @@ add_library(memtest_core STATIC
     src/workload/ConcurrencyWorkload.cpp
     src/workload/CpuLimitWorkload.cpp
     src/workload/MemoryPressureWorkload.cpp
-    src/workload/MemoryRegion.cpp)
+    src/workload/MemoryRegion.cpp
+    src/workload/SharedCounterWorkload.cpp
+    src/workload/WorkloadFactory.cpp)
 target_include_directories(memtest_core PUBLIC src)
 find_package(Threads REQUIRED)
 target_link_libraries(memtest_core PUBLIC Threads::Threads)
@@ -81,7 +83,8 @@ add_executable(memtest_tests
     tests/test_domain.cpp
     tests/test_fake_controller.cpp
     tests/test_main_scene.cpp
-    tests/test_worker_pool.cpp)
+    tests/test_worker_pool.cpp
+    tests/test_workload_sync.cpp)
 target_include_directories(memtest_tests PRIVATE tests)
 target_link_libraries(memtest_tests PRIVATE memtest_core memtest_ui)
 memtest_target_warnings(memtest_tests)
@@ -90,3 +93,4 @@ add_test(NAME domain COMMAND memtest_tests domain)
 add_test(NAME fake_controller COMMAND memtest_tests fake_controller)
 add_test(NAME main_scene COMMAND memtest_tests main_scene)
 add_test(NAME worker_pool COMMAND memtest_tests worker_pool)
+add_test(NAME workload_sync COMMAND memtest_tests workload_sync)
