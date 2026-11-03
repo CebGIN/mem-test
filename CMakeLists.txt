@@ -53,7 +53,8 @@ add_library(memtest_core STATIC
     src/limits/ResourceLimiter.cpp
     src/metrics/MetricsSourceFactory.cpp
     src/metrics/ProcFs.cpp
-    src/metrics/ProcMetricsSource.cpp)
+    src/metrics/ProcMetricsSource.cpp
+    src/runtime/NativeThreadPool.cpp)
 target_include_directories(memtest_core PUBLIC src)
 find_package(Threads REQUIRED)
 target_link_libraries(memtest_core PUBLIC Threads::Threads)
