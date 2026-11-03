@@ -10,6 +10,7 @@ int main(int argc, char** argv) {
         {"fake_controller", memtest::test::fake_controller_suite},
         {"main_scene", memtest::test::main_scene_suite},
         {"worker_pool", memtest::test::worker_pool_suite},
+        {"workload_sync", memtest::test::workload_sync_suite},
     };
 
     if (argc != 2) {
