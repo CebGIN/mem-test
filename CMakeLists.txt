@@ -45,6 +45,8 @@ endfunction()
 # memtest_core no incluye Guayaba: dominio, core, métricas, límites, runtime,
 # workloads, proceso, app y el controlador fake se prueban sin terminal.
 add_library(memtest_core STATIC
+    src/app/ExperimentController.cpp
+    src/app/ExperimentRunner.cpp
     src/app/FakeExperimentController.cpp
     src/core/SystemInfo.cpp
     src/domain/Validation.cpp
@@ -54,6 +56,8 @@ add_library(memtest_core STATIC
     src/metrics/MetricsSourceFactory.cpp
     src/metrics/ProcFs.cpp
     src/metrics/ProcMetricsSource.cpp
+    src/process/PosixProcessSupervisor.cpp
+    src/process/WorkerProtocol.cpp
     src/runtime/NativeThreadPool.cpp
     src/runtime/TaskPool.cpp
     src/runtime/WorkerPoolFactory.cpp
@@ -92,12 +96,17 @@ enable_testing()
 add_executable(memtest_tests
     tests/main.cpp
     tests/test_domain.cpp
+    tests/test_experiment_controller.cpp
     tests/test_fake_controller.cpp
     tests/test_main_scene.cpp
+    tests/test_process_supervisor.cpp
     tests/test_worker_pool.cpp
+    tests/test_worker_protocol.cpp
     tests/test_workload_sync.cpp)
 target_include_directories(memtest_tests PRIVATE tests)
 target_link_libraries(memtest_tests PRIVATE memtest_core memtest_ui)
+# Los tests de supervisor y controlador lanzan el worker real.
+add_dependencies(memtest_tests mem-test-worker)
 memtest_target_warnings(memtest_tests)
 
 add_test(NAME domain COMMAND memtest_tests domain)
@@ -105,6 +114,9 @@ add_test(NAME fake_controller COMMAND memtest_tests fake_controller)
 add_test(NAME main_scene COMMAND memtest_tests main_scene)
 add_test(NAME worker_pool COMMAND memtest_tests worker_pool)
 add_test(NAME workload_sync COMMAND memtest_tests workload_sync)
+add_test(NAME worker_protocol COMMAND memtest_tests worker_protocol)
+add_test(NAME process_supervisor COMMAND memtest_tests process_supervisor)
+add_test(NAME experiment_controller COMMAND memtest_tests experiment_controller)
 
 # Pruebas standalone de métricas y límites (WP1). Incluyen su propio main()
 # porque test_limits se relanza con --child para aplicar límites al proceso.

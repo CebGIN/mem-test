@@ -10,11 +10,11 @@ Proyecto de la materia Sistemas Operativos. Interfaz construida con
 
 ## Estado
 
-**Base Linux integrada.** WP0 (contratos y esqueleto), WP1 (métricas y límites)
-y WP2 (runtime y workloads) ya están en `main`. La TUI corre contra
-`FakeExperimentController`; el worker real, el supervisor y la exportación CSV
-llegan en WP4 y WP3. El soporte Windows quedó estacionado: el MVP compila solo
-en Linux.
+**Base Linux integrada.** WP0 (contratos y esqueleto), WP1 (métricas y límites),
+WP2 (runtime y workloads) y WP4 (worker real, supervisor y controlador) ya están
+en `main`. La TUI usa el controlador real y lanza `mem-test-worker` como proceso
+hijo. La UI completa, el historial y la exportación CSV quedan para WP3. El
+soporte Windows quedó estacionado: el MVP compila solo en Linux.
 
 | Documento | Contenido |
 |---|---|
@@ -58,7 +58,7 @@ Targets:
 | `memtest_core` | Núcleo headless (dominio, métricas, límites, runtime y workloads) |
 | `memtest_ui` | Escena de la TUI sobre Guayaba |
 | `mem-test` | Aplicación TUI |
-| `mem-test-worker` | Proceso hijo; hoy es el stub de WP0 |
+| `mem-test-worker` | Proceso hijo que aplica límites y ejecuta la carga |
 | `memtest_tests` | Suites headless registradas en CTest |
 
 El motor se agrega como subdirectorio de CMake y se enlaza como
@@ -74,9 +74,13 @@ El motor se agrega como subdirectorio de CMake y se enlaza como
 ./build/mem-test
 ```
 
-El worker actual es el stub de WP0: lee una configuración `clave=valor` por
-`stdin`, responde `ERROR code=not_implemented` y sale con 13. El worker real,
-el supervisor y `--probe` se implementan en WP4.
+El worker lee una configuración `clave=valor` por `stdin`, aplica los límites,
+ejecuta la carga y reporta eventos por `stdout`. Para probar únicamente los
+límites, sin ejecutar la carga, se le pasa la misma configuración por `stdin`:
+
+```bash
+./build/mem-test-worker --probe < config.txt
+```
 
 La exportación CSV está prevista para WP3; todavía no está disponible. Cuando
 se implemente, generará en `resultados/`:

@@ -12,6 +12,9 @@ Suite fake_controller_suite();
 Suite main_scene_suite();
 Suite worker_pool_suite();
 Suite workload_sync_suite();
+Suite worker_protocol_suite();
+Suite process_supervisor_suite();
+Suite experiment_controller_suite();
 
 }  // namespace memtest::test
 

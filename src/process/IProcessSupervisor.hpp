@@ -16,7 +16,7 @@ namespace memtest {
 // Un evento del protocolo clave=valor que escribe el worker por stdout
 // (Arquitectura.md §7.2).
 struct WorkerEvent {
-    enum class Type { Hello, Ready, Limits, Progress, Result, Error };
+    enum class Type { Hello, Ready, Limits, Progress, Result, Error, End };
     Type type;
     std::map<std::string, std::string> fields;
 };

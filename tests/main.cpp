@@ -11,6 +11,9 @@ int main(int argc, char** argv) {
         {"main_scene", memtest::test::main_scene_suite},
         {"worker_pool", memtest::test::worker_pool_suite},
         {"workload_sync", memtest::test::workload_sync_suite},
+        {"worker_protocol", memtest::test::worker_protocol_suite},
+        {"process_supervisor", memtest::test::process_supervisor_suite},
+        {"experiment_controller", memtest::test::experiment_controller_suite},
     };
 
     if (argc != 2) {
