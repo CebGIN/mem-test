@@ -1,7 +1,3 @@
-// PROVISIONAL (WP1): copia literal de Arquitectura.md §4 para poder compilar
-// metrics/ y limits/ antes de que llegue el WP0 del Lead.
-// Cuando el Lead publique su src/domain/Types.hpp, descartar este archivo y
-// quedarse con el del Lead (el contrato es suyo).
 #ifndef MEMTEST_DOMAIN_TYPES_HPP
 #define MEMTEST_DOMAIN_TYPES_HPP
 

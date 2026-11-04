@@ -110,12 +110,7 @@ bool read_proc_stat(pid_t pid, ProcStat& out) {
     return parse_stat(data, out);
 }
 
-bool read_meminfo(MemInfo& out) {
-    std::string data;
-    if (!read_file("/proc/meminfo", data)) {
-        return false;
-    }
-
+bool parse_meminfo(const std::string& data, MemInfo& out) {
     MemInfo info;
     std::istringstream lines(data);
     std::string line;
@@ -143,6 +138,9 @@ bool read_meminfo(MemInfo& out) {
         }
     }
 
+    if (info.total_bytes == 0) {
+        return false;  // no es un /proc/meminfo reconocible
+    }
     if (info.available_bytes == 0) {
         info.available_bytes =
             info.free_bytes + info.buffers_bytes + info.cached_bytes;
@@ -151,11 +149,12 @@ bool read_meminfo(MemInfo& out) {
     return true;
 }
 
-bool read_load_average(double& load_1m) {
+bool read_meminfo(MemInfo& out) {
     std::string data;
-    if (!read_file("/proc/loadavg", data)) {
-        return false;
-    }
+    return read_file("/proc/meminfo", data) && parse_meminfo(data, out);
+}
+
+bool parse_load_average(const std::string& data, double& load_1m) {
     std::istringstream fields(data);
     double first = 0.0;
     double second = 0.0;
@@ -165,6 +164,11 @@ bool read_load_average(double& load_1m) {
     }
     load_1m = first;
     return true;
+}
+
+bool read_load_average(double& load_1m) {
+    std::string data;
+    return read_file("/proc/loadavg", data) && parse_load_average(data, load_1m);
 }
 
 }  // namespace memtest::metrics
