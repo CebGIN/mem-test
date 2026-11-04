@@ -36,11 +36,13 @@ add_library(memtest_core STATIC
     src/limits/ResourceLimiter.cpp)
 target_include_directories(memtest_core PUBLIC src)
 
-# Codigo especifico de plataforma: /proc y setrlimit en Linux; psapi y Job
+# Código específico de plataforma: /proc y setrlimit en Linux; psapi y Job
 # Objects en Windows. Mismas interfaces en ambos (IMetricsSource, ResourceLimiter).
 if(WIN32)
     target_sources(memtest_core PRIVATE
-        src/metrics/WinMetricsSource.cpp)
+        src/metrics/WinMetricsSource.cpp
+        src/limits/PlatformLimitsWin.cpp
+        src/limits/CpuLimitNotifierWin.cpp)
     target_link_libraries(memtest_core PUBLIC psapi)
 else()
     target_sources(memtest_core PRIVATE
