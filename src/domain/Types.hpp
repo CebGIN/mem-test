@@ -9,14 +9,17 @@
 
 namespace memtest {
 
+// Modelo de dominio congelado (Arquitectura.md §4). Son tipos de datos puros,
+// sin herencia y sin dependencias de plataforma.
+
 enum class WorkloadKind { Concurrency, CpuLimit, MemoryPressure, SharedCounter };
-enum class WorkerMode   { NativeThreads, RuntimeTasks };
-enum class SyncMode     { None, Mutex, Atomic };
+enum class WorkerMode { NativeThreads, RuntimeTasks };
+enum class SyncMode { None, Mutex, Atomic };
 enum class MemoryLimitKind { None, AddressSpace, DataSegment };
-enum class RunOutcome   { Completed, Stopped, MemoryLimitHit, CpuLimitHit, ExternalKill, Error };
-enum class LimitStatus  { NotRequested, Applied, NotApplied, Unsupported };
-enum class CompareParameter { Threads, MemoryBytes, CpuSeconds };
-enum class RunState     { Idle, Validating, Starting, Running, Stopping, Collecting, Done };
+enum class RunOutcome { Completed, Stopped, MemoryLimitHit, CpuLimitHit, ExternalKill, Error };
+enum class LimitStatus { NotRequested, Applied, NotApplied, Unsupported };
+enum class CompareParameter { Threads, MemoryBytes, CpuSeconds };  // eje de la gráfica comparativa
+enum class RunState { Idle, Validating, Starting, Running, Stopping, Collecting, Done };
 
 struct SystemInfo {
     std::uint64_t total_ram = 0;
@@ -57,18 +60,18 @@ struct ExperimentConfig {
 
 struct MetricsSnapshot {
     std::chrono::milliseconds elapsed{0};
-    std::uint64_t vm_size = 0;      // VmSize
-    std::uint64_t vm_rss = 0;       // VmRSS
-    std::uint64_t vm_hwm = 0;       // VmHWM
-    std::uint64_t vm_swap = 0;      // VmSwap
-    std::uint64_t rss_anon = 0;     // RssAnon
-    std::uint64_t rss_file = 0;     // RssFile
-    std::uint64_t rss_shmem = 0;    // RssShmem
-    std::uint64_t minor_faults = 0; // minflt acumulado
-    std::uint64_t major_faults = 0; // majflt acumulado
+    std::uint64_t vm_size = 0;       // VmSize
+    std::uint64_t vm_rss = 0;        // VmRSS
+    std::uint64_t vm_hwm = 0;        // VmHWM
+    std::uint64_t vm_swap = 0;       // VmSwap
+    std::uint64_t rss_anon = 0;      // RssAnon
+    std::uint64_t rss_file = 0;      // RssFile
+    std::uint64_t rss_shmem = 0;     // RssShmem
+    std::uint64_t minor_faults = 0;  // minflt acumulado
+    std::uint64_t major_faults = 0;  // majflt acumulado
     double cpu_user_s = 0.0;
     double cpu_sys_s = 0.0;
-    int threads = 0;                // Threads
+    int threads = 0;  // Threads
     std::uint64_t voluntary_ctxt = 0;
     std::uint64_t involuntary_ctxt = 0;
     std::uint64_t sys_swap_total = 0;
