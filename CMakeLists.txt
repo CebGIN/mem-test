@@ -31,14 +31,16 @@ add_subdirectory(
     "${GUAYABA_ENGINE_DIR}"
     "${CMAKE_BINARY_DIR}/_deps/GuayabaTUIEngine")
 
-add_library(memtest_core STATIC)
+add_library(memtest_core STATIC
+    src/metrics/MetricsSourceFactory.cpp)
 target_include_directories(memtest_core PUBLIC src)
 
 # Codigo especifico de plataforma: /proc y setrlimit en Linux; psapi y Job
 # Objects en Windows. Mismas interfaces en ambos (IMetricsSource, ResourceLimiter).
 if(NOT WIN32)
     target_sources(memtest_core PRIVATE
-        src/metrics/ProcFs.cpp)
+        src/metrics/ProcFs.cpp
+        src/metrics/ProcMetricsSource.cpp)
 endif()
 
 add_executable(mem-test src/main.cpp)

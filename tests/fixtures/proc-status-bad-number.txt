@@ -1,0 +1,4 @@
+Name:	worker
+VmSize:	   19000 kB
+VmRSS:	    abc kB
+Threads:	1
