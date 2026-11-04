@@ -509,7 +509,7 @@ No hay un hilo de muestreo separado: el hilo de ejecución alterna muestreo y `w
 - Toque de una página cada `page_stride_bytes` (por defecto 4096) para forzar el fallo de página y la residency.
 - Opcional: mantener las páginas durante una pausa corta para que el SO tenga oportunidad de swapear; la pausa se controla con `wall_timeout_ms` y la cancelación.
 - `munmap` al final. Si `mmap` devuelve `MAP_FAILED` con `ENOMEM`, el workload reporta `MemoryLimitHit`.
-- `expected_value = memory_bytes / page_stride_bytes` (páginas objetivo), `observed_value` = páginas tocadas.
+- `expected_value = ceil(memory_bytes / page_stride_bytes)` (páginas objetivo), `observed_value` = páginas tocadas. Si el tamaño no es múltiplo exacto del paso, la última página también cuenta.
 - Si `memory_bytes == 0`, el workload no hace nada y termina `Completed` con una advertencia en `detail`.
 
 ### 12.4 Acceso compartido y sincronización

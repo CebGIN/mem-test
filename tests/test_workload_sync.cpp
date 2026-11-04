@@ -145,6 +145,24 @@ void memory_pressure_touches_pages(Context& context) {
     CHECK_EQ(context, outcome.expected, 4096ull);
     CHECK_EQ(context, outcome.observed, 4096ull);
 }
+
+void memory_pressure_rounds_up(Context& context) {
+    ExperimentConfig config;
+    config.workload = WorkloadKind::MemoryPressure;
+    config.memory_bytes = 10000;  // no es múltiplo de 4096
+    config.page_stride_bytes = 4096;
+    config.wall_timeout_ms = 30000;
+
+    CancellationToken token;
+    WorkloadContext workload_context{&config, &token, {}};
+
+    MemoryPressureWorkload workload;
+    const WorkloadOutcome outcome = workload.run(workload_context);
+
+    CHECK_EQ(context, outcome.outcome, RunOutcome::Completed);
+    CHECK_EQ(context, outcome.expected, 3ull);
+    CHECK_EQ(context, outcome.observed, 3ull);
+}
 #endif
 
 }  // namespace
@@ -158,6 +176,7 @@ Suite workload_sync_suite() {
         {"contador con task pool", shared_counter_with_task_pool},
 #if defined(__linux__)
         {"presion de memoria toca paginas", memory_pressure_touches_pages},
+        {"presion de memoria redondea hacia arriba", memory_pressure_rounds_up},
 #endif
     };
 }

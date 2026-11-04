@@ -36,7 +36,9 @@ void task_pool_runs_each_task_once(Context& context) {
     }
 
     TaskPool pool(4);
-    CHECK_EQ(context, pool.worker_count(), static_cast<std::size_t>(4));
+    // El plan fija min(tareas, max(1, núcleos)); no asumir 4 núcleos.
+    CHECK(context, pool.worker_count() >= 1);
+    CHECK(context, pool.worker_count() <= 4);
     pool.parallel_for(task_count, [&hits](std::size_t index,
                                           const CancellationToken&) {
         hits[index].fetch_add(1);

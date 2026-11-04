@@ -35,7 +35,10 @@ WorkloadOutcome MemoryPressureWorkload::run(const WorkloadContext& context) {
     const std::uint64_t stride = config.page_stride_bytes > 0
                                      ? config.page_stride_bytes
                                      : kDefaultPageStride;
-    result.expected = config.memory_bytes / stride;
+    // El bucle toca una posición por cada tramo de `stride`; si el tamaño no
+    // es múltiplo exacto, la última posición también cuenta.
+    result.expected = config.memory_bytes / stride +
+                      (config.memory_bytes % stride != 0 ? 1 : 0);
 
     MemoryRegion region(config.memory_bytes);
     if (!region.valid()) {
