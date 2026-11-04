@@ -6,6 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(MSVC)
+    # Fuentes en UTF-8 (comentarios con acentos) y avisos útiles.
+    add_compile_options(/utf8 /W4)
+else()
+    add_compile_options(-Wall -Wextra)
+endif()
+
 # GuayabaTUIEngine vive en external/ como submódulo de Git. Si aun no se ha
 # inicializado:
 #   git submodule update --init --recursive
@@ -25,10 +32,30 @@ add_subdirectory(
     "${CMAKE_BINARY_DIR}/_deps/GuayabaTUIEngine")
 
 add_library(memtest_core STATIC
-    src/metrics/ProcFs.cpp)
+    src/metrics/MetricsSourceFactory.cpp
+    src/limits/ResourceLimiter.cpp)
 target_include_directories(memtest_core PUBLIC src)
+
+# Código específico de plataforma: /proc y setrlimit en Linux; psapi y Job
+# Objects en Windows. Mismas interfaces en ambos (IMetricsSource, ResourceLimiter).
+if(WIN32)
+    target_sources(memtest_core PRIVATE
+        src/metrics/WinMetricsSource.cpp
+        src/limits/PlatformLimitsWin.cpp
+        src/limits/CpuLimitNotifierWin.cpp)
+    target_link_libraries(memtest_core PUBLIC psapi)
+else()
+    target_sources(memtest_core PRIVATE
+        src/metrics/ProcFs.cpp
+        src/metrics/ProcMetricsSource.cpp
+        src/limits/PlatformLimitsPosix.cpp
+        src/limits/CpuLimitNotifierPosix.cpp)
+endif()
 
 add_executable(mem-test src/main.cpp)
 target_link_libraries(mem-test PRIVATE
     memtest_core
     GuayabaTUIEngine::GuayabaTUIEngine)
+
+enable_testing()
+add_subdirectory(tests)

@@ -48,8 +48,12 @@ bool parse_stat(const std::string& data, ProcStat& out);
 
 bool read_proc_stat(pid_t pid, ProcStat& out);
 
-// Parsea /proc/meminfo y /proc/loadavg. Si falta MemAvailable, se aproxima con
-// MemFree + Buffers + Cached.
+// Parsean el contenido de /proc/meminfo y /proc/loadavg. Si falta
+// MemAvailable, se aproxima con MemFree + Buffers + Cached.
+bool parse_meminfo(const std::string& data, MemInfo& out);
+bool parse_load_average(const std::string& data, double& load_1m);
+
+// Leen /proc/meminfo y /proc/loadavg y delegan en los parsers anteriores.
 bool read_meminfo(MemInfo& out);
 bool read_load_average(double& load_1m);
 
