@@ -10,9 +10,11 @@ Proyecto de la materia Sistemas Operativos. Interfaz construida con
 
 ## Estado
 
-**Fase de diseño.** Los contratos, la arquitectura, el plan de trabajo y el
-diagrama están congelados en `docs/`. La implementación se desarrolla según ese
-plan; el `src/main.cpp` actual es solo el esqueleto de integración del motor.
+**Base Linux integrada.** WP0 (contratos y esqueleto), WP1 (métricas y límites)
+y WP2 (runtime y workloads) ya están en `main`. La TUI corre contra
+`FakeExperimentController`; el worker real, el supervisor y la exportación CSV
+llegan en WP4 y WP3. El soporte Windows quedó estacionado: el MVP compila solo
+en Linux.
 
 | Documento | Contenido |
 |---|---|
@@ -49,13 +51,15 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Targets previstos:
+Targets:
 
 | Target | Descripción |
 |---|---|
+| `memtest_core` | Núcleo headless (dominio, métricas, límites, runtime y workloads) |
+| `memtest_ui` | Escena de la TUI sobre Guayaba |
 | `mem-test` | Aplicación TUI |
-| `mem-test-worker` | Proceso hijo que aplica límites y ejecuta la carga |
-| `memtest_tests` | Pruebas headless registradas en CTest |
+| `mem-test-worker` | Proceso hijo; hoy es el stub de WP0 |
+| `memtest_tests` | Suites headless registradas en CTest |
 
 El motor se agrega como subdirectorio de CMake y se enlaza como
 `GuayabaTUIEngine::GuayabaTUIEngine`. La API pública queda disponible con:
@@ -70,17 +74,12 @@ El motor se agrega como subdirectorio de CMake y se enlaza como
 ./build/mem-test
 ```
 
-El worker no se lanza a mano en el uso normal: lo crea el supervisor. Para
-diagnóstico o para probar límites:
+El worker actual es el stub de WP0: lee una configuración `clave=valor` por
+`stdin`, responde `ERROR code=not_implemented` y sale con 13. El worker real,
+el supervisor y `--probe` se implementan en WP4.
 
-```bash
-./build/mem-test-worker --probe
-```
-
-El worker lee una configuración `clave=valor` por `stdin`, escribe eventos por
-`stdout` y no abre ninguna interfaz.
-
-La aplicación exporta dos CSV en `resultados/`:
+La exportación CSV está prevista para WP3; todavía no está disponible. Cuando
+se implemente, generará en `resultados/`:
 
 - `resumen_YYYYMMDD-HHMMSS.csv`: una fila por ejecución.
 - `detalle_<run_id>.csv`: la serie temporal de la ejecución.

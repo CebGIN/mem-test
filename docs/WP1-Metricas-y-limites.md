@@ -5,6 +5,10 @@ Qué entrega este paquete de trabajo y cómo se comporta en **Linux** y en
 `ExperimentConfig`) son los de [`Arquitectura.md`](Arquitectura.md) §4; este
 documento solo describe las implementaciones.
 
+> **Estado actual:** el MVP está congelado en Linux. La implementación Windows
+> de este documento quedó estacionada y no se compila en `main`; se conserva
+> como referencia para una etapa posterior.
+
 ## Piezas
 
 | Archivo | Plataforma | Qué hace |
