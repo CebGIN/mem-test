@@ -14,5 +14,8 @@ if(NOT WIN32)
     memtest_add_test(test_proc_metrics)
 endif()
 
+# IMetricsSource medido sobre el propio proceso (Linux y Windows).
+memtest_add_test(test_metrics_source)
+
 # RLIMIT_AS / RLIMIT_DATA / RLIMIT_CPU en Linux; Job Objects en Windows.
 memtest_add_test(test_limits)
