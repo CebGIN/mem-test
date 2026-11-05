@@ -19,3 +19,6 @@ memtest_add_test(test_metrics_source)
 
 # RLIMIT_AS / RLIMIT_DATA / RLIMIT_CPU en Linux; Job Objects en Windows.
 memtest_add_test(test_limits)
+
+# Historial y exportación CSV, sin Guayaba.
+memtest_add_test(test_csv_export)

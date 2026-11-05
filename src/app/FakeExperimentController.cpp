@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "core/CsvExporter.hpp"
 #include "core/SystemInfo.hpp"
 
 namespace memtest {
@@ -139,15 +140,17 @@ std::vector<ExperimentResult> FakeExperimentController::take_results() {
 
 std::vector<ExperimentResult> FakeExperimentController::history() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return history_;
+    return history_.snapshot();
 }
 
-bool FakeExperimentController::export_csv(const std::filesystem::path& dir, std::string* error) {
-    (void)dir;
-    if (error != nullptr) {
-        *error = "La exportación CSV se implementa en WP3.";
+bool FakeExperimentController::export_csv(const std::filesystem::path& dir,
+                                          std::string* error) {
+    std::vector<ExperimentResult> results;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        results = history_.snapshot();
     }
-    return false;
+    return CsvExporter::write(results, dir, nullptr, error);
 }
 
 bool FakeExperimentController::wait_for(std::chrono::milliseconds period) {
@@ -319,11 +322,11 @@ void FakeExperimentController::run(ExperimentConfig config, std::uint64_t run_nu
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_.push_back(result);
-        history_.push_back(result);
-        running_run_ = 0;
-        stop_requested_ = false;
         live_.state = RunState::Done;
         live_.message = result.detail;
+        history_.add(std::move(result));
+        running_run_ = 0;
+        stop_requested_ = false;
     }
 }
 

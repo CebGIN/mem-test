@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "app/IExperimentController.hpp"
+#include "core/ResultStore.hpp"
 #include "domain/Types.hpp"
 #include "domain/Validation.hpp"
 
@@ -47,7 +48,7 @@ private:
     std::condition_variable cv_;
     LiveState live_;
     std::deque<ExperimentResult> pending_;
-    std::vector<ExperimentResult> history_;
+    ResultStore history_;
     std::thread runner_;
     SystemInfo system_;
     GuardrailLimits limits_;
