@@ -31,7 +31,7 @@ Principios que gobiernan el diseño:
 | 06 | Guardrails de software independientes de los límites del SO | Evitan que un formulario mal cargado cuelgue la máquina, incluso si el límite del SO no se pudo aplicar. | La app calcula topes al iniciar y rechaza configuraciones fuera de rango. |
 | 07 | Historial en memoria + exportación CSV | Cumple “repetir y comparar” sin agregar una base de datos. | Dos CSV: resumen y detalle. La sesión no persiste automáticamente. |
 | 08 | Protocolo de líneas `clave=valor` por stdin/stdout | No requiere dependencias externas ni un parser JSON; el worker solo escribe y el padre solo lee. | El worker no recibe comandos por pipe: se controla con señales. |
-| 09 | La cuota cgroup (`cpu.max`) es un extra fuera del MVP | En menos de dos semanas el riesgo de permisos/delegación es alto y el enunciado solo exige límite de CPU por tiempo. | El tipo y la interfaz existen desde el inicio; el control se muestra deshabilitado con “no soportado”. |
+| 09 | La cuota cgroup (`cpu.max`) se implementa como segunda modalidad de límite de CPU | El enunciado pide límites de uso de CPU; la cuota permite comparar tiempo total contra una tasa sin cambiar núcleos. | El worker crea un cgroup hijo y lo limpia; si el entorno no lo permite, el controlador rechaza el inicio y sugiere `RLIMIT_CPU`. |
 | 10 | La repetición es manual y se apoya en el historial | Cada ejecución es independiente y queda registrada con su configuración; repetir es relanzar una fila y comparar es leer las filas ya medidas. | El botón “Repetir” relanza la configuración de una fila del historial; el estado muestra la ejecución actual, no un progreso de serie. |
 
 ## 3. Vista de componentes
@@ -102,7 +102,7 @@ struct ValidationReport {
 
 struct CpuLimitConfig {
     std::optional<int> seconds;        // RLIMIT_CPU: soft=N, hard=N+1
-    std::optional<int> quota_percent;  // cpu.max; extra fuera del MVP
+    std::optional<int> quota_percent;  // cgroup v2 cpu.max (1..100 %)
 };
 
 struct ExperimentConfig {
@@ -308,7 +308,7 @@ Idle → Validating → Starting → Running → Collecting → Done
 
 Los cinco estados de salida acordados son `Completed`, `Stopped`, `MemoryLimitHit`, `CpuLimitHit` y `Error`. `ExternalKill` es un caso distinguido de `Error` (muerte por `SIGKILL` no enviado por el padre, típicamente OOM) que se muestra por separado para no perder la causa.
 
-Cada ejecución es independiente: al terminar, el resultado se agrega al historial y el estado vuelve a `Idle`. Comparar configuraciones es elegir filas del historial.
+Cada ejecución es independiente: al terminar, el resultado se agrega al historial y el estado vuelve a `Idle`. Comparar configuraciones es elegir una fila del historial y abrir la vista A/B; la segunda corrida se elige en el selector de esa vista.
 
 ## 7. Protocolo supervisor ↔ worker
 
@@ -317,8 +317,8 @@ Cada ejecución es independiente: al terminar, el resultado se agrega al histori
 El padre escribe **una línea** por `stdin` y cierra el pipe. Formato `clave=valor`, separado por espacios; los valores no contienen espacios (los textos libres no se envían en la config).
 
 ```text
-workload=concurrency worker_mode=runtime sync_mode=none threads=4
-work_units=100000 increments=0 memory_bytes=0 page_stride=4096
+workload=concurrency worker_mode=runtime load_mode=total sync_mode=none threads=4
+work_units=100000000 increments=0 memory_bytes=0 page_stride=4096 force_swap=0
 wall_timeout_ms=5000 memory_limit_kind=as memory_limit_bytes=268435456
 cpu_seconds=3 cpu_quota=0
 ```
@@ -330,7 +330,7 @@ Una línea por evento, terminada en `\n`, con un límite de 4 KiB por línea:
 ```text
 HELLO worker=1 pid=4242
 READY baseline_vm=15204352 baseline_rss=8912896
-LIMITS memory=applied:268435456 cpu_seconds=applied:3 cpu_quota=unsupported
+LIMITS memory=applied:268435456 cpu_seconds=applied:3 cpu_quota=not_requested
 PROGRESS done=500 total=1000
 RESULT outcome=completed expected=400000 observed=397123
 ERROR code=mmap_failed detail="cannot allocate memory"
@@ -420,13 +420,13 @@ El worker envía `READY baseline_vm=... baseline_rss=...` después de aplicar l�
 - Al alcanzar el blando, el worker reporta `outcome=cpu_limit` y sale con 11. Si no llega a reportar, el duro (`N+1`) manda `SIGKILL`; el padre lo interpreta como `CpuLimitHit` si el tiempo de CPU medido está dentro del margen del límite duro y no fue un kill pedido por el padre.
 - `RLIMIT_CPU` cuenta el tiempo de CPU de **todos los hilos** del proceso. No cambia la cantidad de núcleos ni la afinidad; el enunciado lo pide explícitamente así.
 
-### 9.3 CPU por cuota (fuera del MVP)
+### 9.3 CPU por cuota (cgroup v2)
 
 - `cpu_limit.quota_percent = P` → cgroup v2 `cpu.max` con `quota = P% * period`, `period = 100000 µs`.
-- Requiere un cgroup delegado con permiso de escritura. El sondeo (`mem-test-worker --probe`) comprueba: existe `/sys/fs/cgroup/cgroup.controllers`, se puede crear un subcgroup, escribir `cpu.max` y mover el proceso a `cgroup.procs`.
-- Si no se puede, `LimitStatus::Unsupported`; la UI deshabilita el control y muestra el motivo.
-- La cuota **no mata**: estrangula. El resultado sigue siendo `Completed` y se agregan `nr_throttled` y `throttled_usec` leídos de `cpu.stat`. La UI muestra una insignia “cuota aplicada · N throttles”.
-- Puede convivir con `RLIMIT_CPU`: el resultado registra ambos estados por separado y el detalle indica cuál cortó si el proceso terminó por `SIGXCPU`.
+- El worker busca un ancestro de cgroup con `cpu` disponible y `cgroup.subtree_control` escribible, crea un cgroup hijo, escribe `cpu.max` y se mueve a él. Al terminar lee `cpu.stat` y vuelve a su cgroup original.
+- `CgroupCpuQuota::supported()` hace un sondeo con un cgroup temporal antes de lanzar el worker. Si no se puede, el controlador rechaza el inicio y sugiere `RLIMIT_CPU`.
+- La cuota **no mata**: estrangula. El resultado sigue siendo `Completed` o `Stopped` por duración, y se agregan `nr_throttled` y `throttled_usec` leídos de `cpu.stat`. La UI muestra el porcentaje y el throttling.
+- La prueba usa una sola modalidad a la vez: `RLIMIT_CPU` o cuota, no ambas.
 
 ### 9.4 Sondeo de límites
 
@@ -444,7 +444,7 @@ Se calculan al iniciar con `SystemInfo` y se muestran en la UI. No son editables
 
 | Regla | Valor | Motivo |
 |---|---|---|
-| Memoria máxima solicitada o límite | `min(1 GiB, 25% de RAM total)` | Deja margen para el SO, la TUI y el propio worker |
+| Memoria máxima solicitada o límite | `50% de RAM total`, sin tope absoluto | Deja la otra mitad para el SO, la TUI y el propio worker |
 | Hilos / tareas | `min(8 × núcleos, 64)` | Evita saturar la tabla de hilos en equipos grandes |
 | Duración de pared | ≤ 120 s | Una ejecución no puede quedar colgada |
 | Segundos de CPU | 1..120 si está activo | `RLIMIT_CPU` tiene granularidad de segundos |
@@ -492,34 +492,40 @@ No hay un hilo de muestreo separado: el hilo de ejecución alterna muestreo y `w
 
 ### 12.1 Concurrencia
 
-- Cada tarea ejecuta un bucle de trabajo determinista (hash entero) `work_units` veces y acumula un checksum local.
+- La UI usa `LoadMode::TotalWork`: `work_units` es el total de unidades y se reparte entre las tareas con `split_range`. La duración es un techo de seguridad, no la definición de la carga.
 - `NativeThreads`: `threads` tareas = `threads` hilos.
 - `RuntimeTasks`: `threads` tareas sobre un pool fijo de `min(threads, max(1, núcleos))` hilos nativos, con cola FIFO; el resultado muestra ambos números.
+- `LoadMode::Duration` queda para la prueba de límite de CPU y para configuraciones históricas.
 - Métricas esperadas: duración, CPU, cambios de contexto, hilos vivos. No hay un valor “correcto” que comparar; el experimento es la comparación entre configuraciones.
 
 ### 12.2 Límite de CPU
 
-- Misma carga CPU-bound, sin allocaciones grandes.
-- `cpu_seconds = N` corta a los N segundos de CPU; `quota_percent` (si se enciende) estrangula.
-- Resultado esperado: `CpuLimitHit` con el tiempo de CPU consumido y la duración de pared; o `Completed` si el trabajo termina antes.
+- Misma carga CPU-bound, sin allocaciones grandes, con **1 hilo fijo**.
+- La pestaña siempre tiene un límite activo; el usuario elige una sola modalidad:
+  - `cpu_seconds = N`: `RLIMIT_CPU` con soft=N y hard=N+1. `SIGXCPU` se traduce en cancelación cooperativa y el resultado es `CpuLimitHit`.
+  - `quota_percent = Q`: cgroup v2 `cpu.max` con Q% de un núcleo. El worker crea un cgroup hijo, se mueve a él y lee `cpu.stat` (`nr_throttled`, `throttled_usec`).
+- Si la cuota cgroup no se puede crear o aplicar, el controlador rechaza el inicio y sugiere `RLIMIT_CPU`; no se presenta como una prueba limitada.
+- Resultado esperado: `CpuLimitHit` si actúa `RLIMIT_CPU`, o `Completed`/`Stopped` con throttling visible si actúa la cuota.
 
 ### 12.3 Presión de memoria
 
 - `mmap(nullptr, memory_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)`.
-- Toque de una página cada `page_stride_bytes` (por defecto 4096) para forzar el fallo de página y la residency.
-- Opcional: mantener las páginas durante una pausa corta para que el SO tenga oportunidad de swapear; la pausa se controla con `wall_timeout_ms` y la cancelación.
-- `munmap` al final. Si `mmap` devuelve `MAP_FAILED` con `ENOMEM`, el workload reporta `MemoryLimitHit`.
-- `expected_value = ceil(memory_bytes / page_stride_bytes)` (páginas objetivo), `observed_value` = páginas tocadas. Si el tamaño no es múltiplo exacto del paso, la última página también cuenta.
-- Si `memory_bytes == 0`, el workload no hace nada y termina `Completed` con una advertencia en `detail`.
+- El paso se fija al **tamaño real de página** (`page_size_bytes()`): se toca una página por vez para forzar el fallo de página y la residencia. El campo histórico `page_stride_bytes` queda oculto.
+- `RLIMIT_AS` es el límite por defecto; `RLIMIT_DATA` queda como alternativa. Ninguno limita RSS directamente.
+- El guardrail de memoria es `min(total_ram / 2, available_ram / 2)`.
+- Si `force_swap` está activo, después de tocar las páginas se llama `madvise(MADV_PAGEOUT)` en bloques. Es best-effort: solo tiene efecto si hay SWAP.
+- Se mantiene la región mapeada durante la duración para observar RSS y SWAP; `munmap` al final.
+- `expected_value = ceil(memory_bytes / page_size)` (páginas objetivo), `observed_value` = páginas tocadas. Si `mmap` falla con `ENOMEM`, el resultado es `MemoryLimitHit`.
 
 ### 12.4 Acceso compartido y sincronización
 
-- `tasks = threads`, `increments = increments_per_thread`; cada tarea incrementa un contador compartido.
-- `SyncMode::None`: `load(relaxed)`, suma local, `store(relaxed)` sin CAS. No hay data race según el modelo de C++ (las operaciones son atómicas), pero sí actualizaciones perdidas reales. Se intercala `std::this_thread::yield()` cada 1024 incrementos para aumentar la contención.
+- `tasks = threads`, con un mínimo de **2 hilos**; cada tarea incrementa un contador compartido. Hilos y worker quedan visibles para el usuario.
+- `SyncMode::None`: contador **no atómico** y data race real (comportamiento indefinido en C++). Las actualizaciones perdidas no son deterministas; es una demostración docente deliberada.
 - `SyncMode::Mutex`: `std::mutex` + `std::lock_guard`.
 - `SyncMode::Atomic`: `fetch_add(1, std::memory_order_relaxed)`.
-- `expected_value = threads * increments`; `observed_value = counter`; `detail` incluye `lost = expected - observed`.
-- El resultado de `None` no se considera un fallo: es el comportamiento observado. La UI lo muestra como “actualizaciones perdidas” y permite comparar con mutex/atómico.
+- El mismo `std::this_thread::yield()` cada 1024 incrementos se aplica a los tres modos para no sesgar la comparación de throughput.
+- `expected_value` = intentos; `observed_value` = contador; la UI muestra pérdidas absolutas y porcentaje, además de cambios de contexto.
+- El resultado de `None` no se considera un fallo: es el comportamiento observado.
 
 ## 13. UI
 
@@ -527,12 +533,12 @@ La página **1 · Componentes** y el guion de demo del plan de trabajo describen
 
 - `SplitContainer` horizontal: zona izquierda (formulario) y zona derecha (métricas + historial).
 - `PanelContainer` + `VBox` para cada zona.
-- Selector de experimento: `ListView` con las cuatro opciones.
+- Selector de experimento: cuatro `Button` en fila que actúan como tabs; un `ListView` oculto guarda la selección.
 - Campos: `SpinBox` para números, `CheckBox` para límites opcionales, `ListView` o fila de `Button` para enums.
 - Acciones: `Button` Iniciar, Detener, Repetir, Exportar. “Iniciar” se deshabilita si la validación falla o hay una ejecución activa. “Repetir” recarga en el formulario la configuración de la fila seleccionada y la lanza de nuevo.
 - Métricas: `Label` por métrica y `Graph` para la serie temporal (RSS y CPU; el usuario puede cambiar la métrica).
-- Historial: `ListView` con una fila formateada por ejecución; selección de dos o más filas para comparar.
-- Comparación: `Graph` de la métrica elegida contra el parámetro seleccionado (`CompareParameter`) y tabla.
+- Historial: `ListView` con una fila compacta por ejecución y un `Button` Comparar.
+- Comparación A/B: vista aparte dentro de la misma escena (`CompareView`). A la izquierda la ficha de la corrida elegida; a la derecha un selector con las demás corridas y la ficha de B con sus deltas respecto de A. Se abre con Comparar, Enter/doble clic en el historial o F9, y se vuelve con Esc o Volver. Ambas páginas comparten cabecera y barra de estado.
 - Estado: `Label` con el estado de la ejecución, insignias de límites y mensaje de error/estado.
 
 Reglas de presentación:
@@ -551,30 +557,37 @@ MainScene
    ├─ HBox header
    │  ├─ Label "mem-test"
    │  ├─ Label estado (Idle / Ejecutando / Detenida)
-   │  └─ Label guardrails (RAM, hilos, duración, ejecuciones)
-   ├─ SplitContainer body
-   │  ├─ PanelContainer izquierda
-   │  │  └─ VBox
-   │  │     ├─ ListView selector de experimento
-   │  │     ├─ VBox formulario (se reemplazan las filas según el experimento)
-   │  │     │  ├─ HBox Label + SpinBox (hilos, unidades, MiB, segundos)
-   │  │     │  ├─ HBox Label + ListView/Button (worker, sync)
-   │  │     │  └─ HBox CheckBox + SpinBox (límite CPU/memoria)
-   │  │     ├─ Label errores de validación
-   │  │     └─ HBox acciones
-   │  │        ├─ Button Iniciar
-   │  │        ├─ Button Detener
-   │  │        ├─ Button Repetir
-   │  │        └─ Button Exportar
-   │  └─ VBox derecha
-   │     ├─ PanelContainer métricas
-   │     │  ├─ GridContainer etiquetas (VSZ, RSS, pico, SWAP, fallos, CPU, hilos, ctxt)
-   │     │  └─ Graph serie temporal
-   │     ├─ PanelContainer historial
-   │     │  └─ ListView filas de ejecuciones
-   │     └─ PanelContainer comparación
-   │        ├─ Graph métrica vs parámetro
-   │        └─ GridContainer tabla comparativa
+   │  └─ Label sistema (CPU, RAM, SWAP en vivo)
+   ├─ Control body (alterna páginas)
+   │  ├─ SplitContainer main_page
+   │  │  ├─ PanelContainer izquierda
+   │  │  │  └─ VBox
+   │  │  │     ├─ HBox tabs de experimento (Conc./CPU/Memoria/Comp.)
+   │  │  │     ├─ ScrollView + VBox formulario (filas según el experimento)
+   │  │  │     │  ├─ HBox Label + SpinBox (hilos, duración, MiB, segundos)
+   │  │  │     │  ├─ HBox Label + ListView (worker, sync, límite de memoria)
+   │  │  │     │  └─ HBox CheckBox + SpinBox (límite CPU)
+   │  │  │     ├─ Label errores de validación
+   │  │  │     └─ HBox acciones
+   │  │  │        ├─ Button Iniciar
+   │  │  │        ├─ Button Detener
+   │  │  │        ├─ Button Repetir
+   │  │  │        └─ Button Exportar
+   │  │  └─ VBox derecha
+   │  │     ├─ PanelContainer métricas (sistema + carga, grafos)
+   │  │     └─ PanelContainer historial
+   │  │        ├─ ListView filas de ejecuciones
+   │  │        └─ Button Comparar
+   │  └─ SplitContainer compare_page (oculta hasta abrir Comparar)
+   │     ├─ PanelContainer Ejecución A
+   │     │  ├─ HBox insignia A + título de la corrida (color por resultado)
+   │     │  ├─ HBox Button Volver + Button Repetir A
+   │     │  └─ Label cuerpo de la ficha de A
+   │     └─ PanelContainer Comparar con
+   │        ├─ Label "Comparar con · N"
+   │        ├─ ListView selector compacto (alto = corridas, tope 4)
+   │        ├─ HBox insignia B + título de la corrida
+   │        └─ Label cuerpo de la ficha de B con deltas
    └─ Label status bar (mensaje, límites aplicados, estado)
 ```
 
@@ -589,12 +602,13 @@ La UI no crea ni destruye workers: solo llama a `start`, `stop` y `export_csv` e
 - Columnas del resumen (mínimo):
 
 ```text
-run_id, timestamp, workload, worker_mode, sync_mode, threads, work_units,
-increments, memory_bytes, page_stride, memory_limit_kind, memory_limit_bytes,
-cpu_seconds, cpu_quota, outcome, duration_ms, vm_size_peak, vm_rss_peak,
-vm_hwm, vm_swap_peak, minor_faults, major_faults, cpu_user_s, cpu_sys_s,
-threads_peak, voluntary_ctxt, involuntary_ctxt, expected, observed,
-limit_memory_status, limit_cpu_status, detail
+run_id, timestamp, workload, worker_mode, load_mode, sync_mode, threads,
+work_units, increments, memory_bytes, page_stride, force_swap,
+memory_limit_kind, memory_limit_bytes, cpu_seconds, cpu_quota,
+limit_cpu_quota_status, nr_throttled, throttled_usec, outcome, duration_ms,
+vm_size_peak, vm_rss_peak, vm_hwm, vm_swap_peak, minor_faults, major_faults,
+cpu_user_s, cpu_sys_s, threads_peak, voluntary_ctxt, involuntary_ctxt,
+expected, observed, limit_memory_status, limit_cpu_status, detail
 ```
 
 - Columnas del detalle:
@@ -617,9 +631,9 @@ voluntary_ctxt, involuntary_ctxt, load_1m
 | Carga que reserva memoria virtual y toca páginas | `MemoryPressureWorkload` | VSZ/RSS y fallos de página antes/después |
 | Límites de memoria y CPU aplicables, con aviso si no | `ResourceLimiter`, `LimitProbe`, `LimitReport` | Ejecución con AS/DATA y CPU; estados `Applied/NotApplied/Unsupported` |
 | Mostrar RSS, VSZ, fallos, SWAP, duración y resultado | `ProcMetricsSource`, `MetricsPanel` | Panel en vivo + fila de historial + CSV |
-| Repetir y comparar configuraciones | `ComparePanel`, `ResultStore` | Repetición manual de `1,2,4,8` y tabla/gráfica comparativa |
+| Repetir y comparar configuraciones | `CompareView`, `ResultStore` | Repetición manual de `1,2,4,8` y vista A/B con deltas |
 | Distinguir VM, RAM residente, SWAP y fallos | `MetricsSnapshot`, UI | Etiquetas y unidades explícitas; SWAP “no disponible” si falta |
-| Carga controlada, detenible y sin agotar el equipo | Guardrails, `SIGTERM`, watchdog | Detener en <500 ms + resultados parciales; topes de 25% RAM |
+| Carga controlada, detenible y sin agotar el equipo | Guardrails, `SIGTERM`, watchdog | Detener en <500 ms + resultados parciales; tope de 50% de RAM |
 | Aplicación ejecutable para revisión | CMake, README, worker | `cmake --build` + `./build/mem-test`; `ctest` |
 
 ## 16. Estrategia de pruebas
@@ -652,16 +666,16 @@ Criterios de aceptación transversales:
 | `RLIMIT_DATA` depende del kernel | Comparaciones engañosas | Registrar el tipo; no prometer equivalencia con AS |
 | SWAP ausente en la máquina | `VmSwap` siempre 0 | Mostrar “SWAP no disponible”; no interpretar 0 como medición |
 | `/proc/<pid>/stat` con `comm` con espacios | Parseo incorrecto | Buscar el último `)`; test específico |
-| Carrera intencional en `SyncMode::None` | Resultado no determinista | Usar load/store atómicos relajados; documentar que no es UB; comparar tendencia |
+| Data race intencional en `SyncMode::None` | Resultado no determinista y UB | Es una demostración docente deliberada; no usar como patrón de producción; comparar tendencia |
 | Worker huérfano | Consumo de recursos tras cerrar | `PR_SET_PDEATHSIG`, grupo de procesos, `SIGKILL` de limpieza |
-| El entorno no permite `cpu.max` | La cuota no se puede mostrar | `Unsupported` + control deshabilitado; el MVP no depende de ella |
+| El entorno no permite `cpu.max` | La cuota no se puede mostrar | Rechazar el inicio con un mensaje que sugiere `RLIMIT_CPU`; no presentar la prueba como limitada |
 | Ramas largas | Merge tardío | Ramas de 1–2 días, integración el día 5 y el día 8, contratos congelados |
 | Plazo de menos de 2 semanas | Recortes a último momento | Líneas de corte definidas en el plan; nunca recortar límites/métricas/stop |
 
 No objetivos del MVP:
 
 - GUI, web, ejecución remota o multiusuario.
-- Forzar el uso de swap o agotar la memoria del equipo.
+- Agotar la memoria del equipo; el forzado de SWAP es best-effort y opcional.
 - Persistencia automática entre sesiones (solo CSV manual).
 - Cuota cgroup obligatoria.
 - Perfiles de rendimiento a nivel de instrucción.
@@ -724,7 +738,7 @@ src/
   app/        IExperimentController · ExperimentController
               ExperimentRunner · FakeExperimentController
   ui/         MainScene · ExperimentForm · MetricsPanel
-              HistoryPanel · ComparePanel · StatusBar · UiFormat
+              HistoryPanel · CompareView · StatusBar · UiFormat
   worker/     main.cpp · ProbeMode
 tests/
 docs/

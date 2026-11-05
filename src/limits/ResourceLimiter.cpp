@@ -41,12 +41,8 @@ LimitReport ResourceLimiter::apply(const ExperimentConfig& config,
         }
     }
 
-    // La cuota (cgroup v2 cpu.max) está fuera del MVP: se pide, pero no se
-    // aplica, y el resultado lo dice con claridad.
-    if (config.cpu_limit.quota_percent.has_value()) {
-        report.cpu_quota_status = LimitStatus::Unsupported;
-        add_note(notes, "cuota de CPU fuera del MVP");
-    }
+    // La cuota cgroup la aplica el worker con CgroupCpuQuota, porque necesita
+    // permanecer activa durante toda la carga y leer cpu.stat al final.
 
     if (detail != nullptr) {
         *detail = notes;

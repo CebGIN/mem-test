@@ -36,12 +36,22 @@ ExperimentResult make_result() {
     result.run_id = "run-1";
     result.config.workload = WorkloadKind::SharedCounter;
     result.config.worker_mode = WorkerMode::RuntimeTasks;
+    result.config.load_mode = LoadMode::TotalWork;
+    result.config.force_swap = true;
     result.config.sync_mode = SyncMode::Mutex;
     result.config.threads = 4;
     result.config.increments_per_thread = 200000;
     result.config.memory_limit_kind = MemoryLimitKind::AddressSpace;
     result.config.memory_limit_bytes = 64 * kMiB;
     result.config.cpu_limit.seconds = 2;
+    result.config.cpu_limit.quota_percent = 50;
+    result.config.duration_ms = 2500;
+    result.system_baseline.mem_total = 8ull * 1024ull * kMiB;
+    result.system_baseline.mem_used = 3ull * 1024ull * kMiB;
+    result.system_peak.mem_used = 4ull * 1024ull * kMiB;
+    result.system_last.mem_used = 4ull * 1024ull * kMiB;
+    result.system_cpu_peak_percent = 42.5;
+    result.system_ram_delta = 1ull * 1024ull * kMiB;
     result.outcome = RunOutcome::MemoryLimitHit;
     result.detail = "fallo, con \"comillas\"\nsegunda linea";
     result.duration = std::chrono::milliseconds(1234);
@@ -52,6 +62,10 @@ ExperimentResult make_result() {
     result.limits.memory_applied = 64 * kMiB;
     result.limits.cpu_seconds_status = LimitStatus::Applied;
     result.limits.cpu_seconds_applied = 2;
+    result.limits.cpu_quota_status = LimitStatus::Applied;
+    result.limits.cpu_quota_applied = 50;
+    result.limits.nr_throttled = 12;
+    result.limits.throttled_usec = 3456;
 
     result.peak.vm_size = 80 * kMiB;
     result.peak.vm_rss = 60 * kMiB;
@@ -130,6 +144,12 @@ void test_export_writes_summary_and_detail() {
     CHECK(summary.find("MemoryLimitHit") != std::string::npos);
     CHECK(summary.find("Applied") != std::string::npos);
     CHECK(summary.find("1234") != std::string::npos);
+    CHECK(summary.find("sys_mem_used_peak") != std::string::npos);
+    CHECK(summary.find("TotalWork") != std::string::npos);
+    CHECK(summary.find("nr_throttled") != std::string::npos);
+    CHECK(summary.find("throttled_usec") != std::string::npos);
+    CHECK(summary.find("42.5") != std::string::npos);
+    CHECK(summary.find("2500") != std::string::npos);
     // El detalle va entre comillas, con las comillas internas duplicadas y el
     // salto de línea conservado dentro del campo.
     CHECK(summary.find("\"fallo, con \"\"comillas\"\"\nsegunda linea\"") !=

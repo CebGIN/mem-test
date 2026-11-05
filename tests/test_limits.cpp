@@ -241,7 +241,8 @@ void test_invalid_and_unsupported_requests() {
     const LimitReport r = ResourceLimiter().apply(cfg, &detail);
     CHECK(r.memory_status == LimitStatus::NotApplied);
     CHECK(r.cpu_seconds_status == LimitStatus::NotApplied);
-    CHECK(r.cpu_quota_status == LimitStatus::Unsupported);  // fuera del MVP
+    // La cuota cgroup la aplica el worker con CgroupCpuQuota.
+    CHECK(r.cpu_quota_status == LimitStatus::NotRequested);
     CHECK(!detail.empty());
 }
 

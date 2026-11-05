@@ -2,7 +2,9 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -191,6 +193,127 @@ bool ProcMetricsSource::sample(pid_t pid, MetricsSnapshot& out) const {
     if (read_load_average(load)) {
         snap.load_1m = load;
     }
+
+    out = snap;
+    return true;
+}
+
+bool ProcMetricsSource::sample_system(SystemSnapshot& out) const {
+    GlobalStat global;
+    MemInfo mem;
+    VmStat vm;
+    if (!read_global_stat(global) || !read_meminfo(mem)) {
+        return false;
+    }
+    (void)read_vmstat(vm);
+
+    double load_1m = 0.0;
+    double load_5m = 0.0;
+    double load_15m = 0.0;
+    (void)read_load_averages(load_1m, load_5m, load_15m);
+
+    const auto now = std::chrono::steady_clock::now();
+
+    std::lock_guard<std::mutex> lock(system_mutex_);
+
+    SystemSnapshot snap;
+    snap.mem_total = mem.total_bytes;
+    snap.mem_available = mem.available_bytes;
+    snap.mem_used = mem.total_bytes > mem.available_bytes
+                        ? mem.total_bytes - mem.available_bytes
+                        : 0;
+    snap.mem_free = mem.free_bytes;
+    snap.swap_total = mem.swap_total_bytes;
+    snap.swap_free = mem.swap_free_bytes;
+    snap.swap_used = mem.swap_total_bytes > mem.swap_free_bytes
+                         ? mem.swap_total_bytes - mem.swap_free_bytes
+                         : 0;
+    snap.swap_available = mem.swap_total_bytes > 0;
+    snap.load_1m = load_1m;
+    snap.load_5m = load_5m;
+    snap.load_15m = load_15m;
+    snap.procs_running = global.procs_running;
+    snap.procs_blocked = global.procs_blocked;
+    snap.processes = global.processes;
+    snap.ctxt = global.ctxt;
+    snap.minor_faults = vm.pgfault;
+    snap.major_faults = vm.pgmajfault;
+    snap.swap_in = vm.pswpin;
+    snap.swap_out = vm.pswpout;
+
+    if (!system_primed_) {
+        first_sample_ = now;
+        system_primed_ = true;
+    } else {
+        const double seconds =
+            std::chrono::duration<double>(now - previous_sample_).count();
+        const double safe_seconds = std::max(seconds, 1e-6);
+
+        const std::uint64_t previous_total =
+            previous_global_.cpu_user + previous_global_.cpu_nice +
+            previous_global_.cpu_system + previous_global_.cpu_idle +
+            previous_global_.cpu_iowait + previous_global_.cpu_irq +
+            previous_global_.cpu_softirq + previous_global_.cpu_steal;
+        const std::uint64_t current_total =
+            global.cpu_user + global.cpu_nice + global.cpu_system +
+            global.cpu_idle + global.cpu_iowait + global.cpu_irq +
+            global.cpu_softirq + global.cpu_steal;
+        const std::uint64_t total_delta =
+            current_total > previous_total ? current_total - previous_total : 0;
+
+        auto delta = [](std::uint64_t before, std::uint64_t after) {
+            return after > before ? after - before : 0;
+        };
+        auto percent = [total_delta](std::uint64_t part) {
+            return total_delta == 0
+                       ? 0.0
+                       : 100.0 * static_cast<double>(part) /
+                             static_cast<double>(total_delta);
+        };
+
+        const std::uint64_t user_delta =
+            delta(previous_global_.cpu_user, global.cpu_user) +
+            delta(previous_global_.cpu_nice, global.cpu_nice);
+        const std::uint64_t system_delta =
+            delta(previous_global_.cpu_system, global.cpu_system) +
+            delta(previous_global_.cpu_irq, global.cpu_irq) +
+            delta(previous_global_.cpu_softirq, global.cpu_softirq);
+        const std::uint64_t iowait_delta =
+            delta(previous_global_.cpu_iowait, global.cpu_iowait);
+
+        if (total_delta == 0) {
+            snap.cpu_user_percent = 0.0;
+            snap.cpu_system_percent = 0.0;
+            snap.cpu_iowait_percent = 0.0;
+            snap.cpu_total_percent = 0.0;
+        } else {
+            snap.cpu_user_percent = percent(user_delta);
+            snap.cpu_system_percent = percent(system_delta);
+            snap.cpu_iowait_percent = percent(iowait_delta);
+            snap.cpu_total_percent = std::min(
+                100.0, std::max(0.0,
+                                100.0 - percent(delta(previous_global_.cpu_idle,
+                                                      global.cpu_idle) +
+                                                iowait_delta)));
+        }
+
+        snap.ctxt_per_second = static_cast<std::uint64_t>(
+            static_cast<double>(delta(previous_global_.ctxt, global.ctxt)) /
+            safe_seconds);
+        snap.minor_faults_per_second = static_cast<std::uint64_t>(
+            static_cast<double>(delta(previous_vm_.pgfault, vm.pgfault)) /
+            safe_seconds);
+        snap.major_faults_per_second = static_cast<std::uint64_t>(
+            static_cast<double>(delta(previous_vm_.pgmajfault, vm.pgmajfault)) /
+            safe_seconds);
+    }
+
+    snap.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - first_sample_);
+
+    previous_global_ = global;
+    previous_vm_ = vm;
+    previous_sample_ = now;
 
     out = snap;
     return true;

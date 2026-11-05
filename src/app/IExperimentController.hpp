@@ -15,6 +15,12 @@ struct LiveState {
     RunState state = RunState::Idle;
     MetricsSnapshot last;
     std::vector<MetricsSnapshot> recent;
+    // Estado global del sistema: se actualiza también cuando no hay ejecución.
+    SystemSnapshot system;
+    std::vector<SystemSnapshot> system_recent;
+    SystemSnapshot system_baseline;
+    SystemSnapshot system_peak;
+    bool has_system_baseline = false;
     std::string message;
 };
 
@@ -26,7 +32,7 @@ public:
     virtual ValidationReport validate(const ExperimentConfig& config) const = 0;
     virtual bool start(const ExperimentConfig& config, std::string* error) = 0;
     virtual void stop() = 0;
-    virtual LiveState live() const = 0;
+    virtual LiveState live() = 0;
     virtual std::vector<ExperimentResult> take_results() = 0;
     virtual std::vector<ExperimentResult> history() const = 0;
     virtual bool export_csv(const std::filesystem::path& dir, std::string* error) = 0;

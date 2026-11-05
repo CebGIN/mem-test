@@ -22,12 +22,27 @@ inline void style_list(const guayaba::NodeRef<guayaba::ListView>& list) {
     list->set_selection_text_color("BRIGHT_WHITE");
 }
 
+inline void style_button_box(guayaba::StyleBox& box, const char* background,
+                             const char* border) {
+    box.set_background_color(background);
+    box.set_border_width(1);
+    box.set_border_style(guayaba::StyleBorder::ASCII);
+    box.set_border_color(border);
+    box.set_content_margin(1, 0, 1, 0);
+}
+
+// Botón de acción: fondo, borde y un margen horizontal para que el texto no
+// toque el marco. El borde eleva la altura mínima a tres filas.
 inline void style_button(const guayaba::NodeRef<guayaba::Button>& button) {
     using guayaba::ButtonState;
-    button->get_stylebox(ButtonState::Normal).set_background_color("BLUE");
-    button->get_stylebox(ButtonState::Hover).set_background_color("CYAN");
-    button->get_stylebox(ButtonState::Pressed).set_background_color("BRIGHT_BLUE");
-    button->get_stylebox(ButtonState::Disabled).set_background_color("BRIGHT_BLACK");
+    style_button_box(button->get_stylebox(ButtonState::Normal), "BLUE",
+                     "BRIGHT_WHITE");
+    style_button_box(button->get_stylebox(ButtonState::Hover), "CYAN", "WHITE");
+    style_button_box(button->get_stylebox(ButtonState::Pressed),
+                     "BRIGHT_BLUE", "BRIGHT_WHITE");
+    style_button_box(button->get_stylebox(ButtonState::Disabled),
+                     "BRIGHT_BLACK", "BRIGHT_BLACK");
+    button->set_text_align(guayaba::TextAlign::Center);
     button->set_text_color(ButtonState::Normal, "BRIGHT_WHITE");
     button->set_text_color(ButtonState::Hover, "BLACK");
     button->set_text_color(ButtonState::Pressed, "BRIGHT_WHITE");

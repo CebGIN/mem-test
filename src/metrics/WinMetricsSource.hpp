@@ -23,6 +23,7 @@ namespace memtest::metrics {
 class WinMetricsSource final : public IMetricsSource {
 public:
     bool sample(pid_t pid, MetricsSnapshot& out) const override;
+    bool sample_system(SystemSnapshot& out) const override;
     SystemInfo system_info() const override;
 };
 
