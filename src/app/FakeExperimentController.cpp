@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "core/CsvExporter.hpp"
 #include "core/SystemInfo.hpp"
 
 namespace memtest {
@@ -92,9 +93,13 @@ bool FakeExperimentController::start(const ExperimentConfig& config, std::string
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    live_ = LiveState{};
     live_.state = RunState::Starting;
     live_.message = "Preparando ejecución simulada";
+    live_.last = MetricsSnapshot{};
+    live_.recent.clear();
+    live_.system_baseline = make_system_sample(false);
+    live_.system_peak = live_.system_baseline;
+    live_.has_system_baseline = true;
     stop_requested_ = false;
     running_run_ = next_run_number_++;
 
@@ -125,9 +130,56 @@ void FakeExperimentController::stop() {
     cv_.notify_all();
 }
 
-LiveState FakeExperimentController::live() const {
+LiveState FakeExperimentController::live() {
     std::lock_guard<std::mutex> lock(mutex_);
+    const bool running = running_run_ != 0;
+    live_.system = make_system_sample(running);
+    live_.system_recent.push_back(live_.system);
+    if (live_.system_recent.size() > 240) {
+        live_.system_recent.erase(live_.system_recent.begin());
+    }
+    if (running) {
+        live_.system_peak = live_.system;
+    }
     return live_;
+}
+
+SystemSnapshot FakeExperimentController::make_system_sample(bool running) {
+    SystemSnapshot sample;
+    sample.elapsed = std::chrono::milliseconds(system_tick_ * 250);
+    sample.mem_total = system_.total_ram;
+    sample.mem_available = system_.available_ram > 0
+                               ? system_.available_ram
+                               : system_.total_ram / 2;
+    sample.mem_used = sample.mem_total > sample.mem_available
+                          ? sample.mem_total - sample.mem_available
+                          : 0;
+    if (running && sample.mem_total > 0) {
+        sample.mem_used = std::min(sample.mem_total,
+                                   sample.mem_used + sample.mem_total / 10);
+    }
+    sample.mem_free = sample.mem_available / 2;
+    sample.swap_total = system_.swap_total;
+    sample.swap_free = system_.swap_total;
+    sample.swap_used = 0;
+    sample.swap_available = system_.swap_total > 0;
+    sample.cpu_total_percent = running ? 75.0 : 5.0;
+    sample.cpu_user_percent = running ? 60.0 : 3.0;
+    sample.cpu_system_percent = running ? 15.0 : 2.0;
+    sample.load_1m = running ? 3.0 : 0.2;
+    sample.load_5m = running ? 2.0 : 0.2;
+    sample.load_15m = running ? 1.0 : 0.2;
+    sample.procs_running = running ? 4 : 1;
+    sample.procs_blocked = 0;
+    sample.processes = 100 + system_tick_;
+    sample.ctxt = system_tick_ * 1000;
+    sample.ctxt_per_second = running ? 8000 : 500;
+    sample.minor_faults = system_tick_ * (running ? 5000 : 100);
+    sample.major_faults = system_tick_ / 10;
+    sample.minor_faults_per_second = running ? 5000 : 100;
+    sample.major_faults_per_second = running ? 5 : 0;
+    ++system_tick_;
+    return sample;
 }
 
 std::vector<ExperimentResult> FakeExperimentController::take_results() {
@@ -139,15 +191,17 @@ std::vector<ExperimentResult> FakeExperimentController::take_results() {
 
 std::vector<ExperimentResult> FakeExperimentController::history() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return history_;
+    return history_.snapshot();
 }
 
-bool FakeExperimentController::export_csv(const std::filesystem::path& dir, std::string* error) {
-    (void)dir;
-    if (error != nullptr) {
-        *error = "La exportación CSV se implementa en WP3.";
+bool FakeExperimentController::export_csv(const std::filesystem::path& dir,
+                                          std::string* error) {
+    std::vector<ExperimentResult> results;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        results = history_.snapshot();
     }
-    return false;
+    return CsvExporter::write(results, dir, nullptr, error);
 }
 
 bool FakeExperimentController::wait_for(std::chrono::milliseconds period) {
@@ -262,8 +316,9 @@ void FakeExperimentController::run(ExperimentConfig config, std::uint64_t run_nu
         result.limits.cpu_seconds_applied = *config.cpu_limit.seconds;
     }
     if (config.cpu_limit.quota_percent.has_value()) {
-        // La cuota cgroup queda fuera del MVP (Arquitectura.md §9.3).
-        result.limits.cpu_quota_status = LimitStatus::Unsupported;
+        // El controlador fake no crea cgroups: simula la cuota como aplicada.
+        result.limits.cpu_quota_status = LimitStatus::Applied;
+        result.limits.cpu_quota_applied = *config.cpu_limit.quota_percent;
     }
 
     {
@@ -318,12 +373,34 @@ void FakeExperimentController::run(ExperimentConfig config, std::uint64_t run_nu
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        result.system_baseline = live_.system_baseline;
+        result.system_peak = live_.system;
+        result.system_last = live_.system;
+        result.system_ram_delta =
+            result.system_peak.mem_used > result.system_baseline.mem_used
+                ? result.system_peak.mem_used - result.system_baseline.mem_used
+                : 0;
+        result.system_swap_delta =
+            result.system_peak.swap_used > result.system_baseline.swap_used
+                ? result.system_peak.swap_used - result.system_baseline.swap_used
+                : 0;
+        result.system_cpu_peak_percent = result.system_peak.cpu_total_percent;
+        result.system_minor_faults_delta =
+            result.system_peak.minor_faults > result.system_baseline.minor_faults
+                ? result.system_peak.minor_faults -
+                      result.system_baseline.minor_faults
+                : 0;
+        result.system_major_faults_delta =
+            result.system_peak.major_faults > result.system_baseline.major_faults
+                ? result.system_peak.major_faults -
+                      result.system_baseline.major_faults
+                : 0;
         pending_.push_back(result);
-        history_.push_back(result);
-        running_run_ = 0;
-        stop_requested_ = false;
         live_.state = RunState::Done;
         live_.message = result.detail;
+        history_.add(std::move(result));
+        running_run_ = 0;
+        stop_requested_ = false;
     }
 }
 

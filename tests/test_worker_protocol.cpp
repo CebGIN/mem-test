@@ -11,13 +11,16 @@ void config_roundtrip(Context& context) {
     ExperimentConfig config;
     config.workload = WorkloadKind::MemoryPressure;
     config.worker_mode = WorkerMode::RuntimeTasks;
+    config.load_mode = LoadMode::TotalWork;
     config.sync_mode = SyncMode::Atomic;
     config.threads = 3;
     config.work_units = 1234;
     config.increments_per_thread = 5678;
     config.memory_bytes = 64ull * 1024ull * 1024ull;
     config.page_stride_bytes = 8192;
+    config.force_swap = true;
     config.wall_timeout_ms = 1500;
+    config.duration_ms = 3500;
     config.memory_limit_kind = MemoryLimitKind::AddressSpace;
     config.memory_limit_bytes = 96ull * 1024ull * 1024ull;
     config.cpu_limit.seconds = 7;
@@ -33,6 +36,7 @@ void config_roundtrip(Context& context) {
     CHECK(context, error.empty());
     CHECK_EQ(context, parsed.workload, config.workload);
     CHECK_EQ(context, parsed.worker_mode, config.worker_mode);
+    CHECK_EQ(context, parsed.load_mode, config.load_mode);
     CHECK_EQ(context, parsed.sync_mode, config.sync_mode);
     CHECK_EQ(context, parsed.threads, config.threads);
     CHECK_EQ(context, parsed.work_units, config.work_units);
@@ -40,7 +44,9 @@ void config_roundtrip(Context& context) {
              config.increments_per_thread);
     CHECK_EQ(context, parsed.memory_bytes, config.memory_bytes);
     CHECK_EQ(context, parsed.page_stride_bytes, config.page_stride_bytes);
+    CHECK_EQ(context, parsed.force_swap, config.force_swap);
     CHECK_EQ(context, parsed.wall_timeout_ms, config.wall_timeout_ms);
+    CHECK_EQ(context, parsed.duration_ms, config.duration_ms);
     CHECK_EQ(context, parsed.memory_limit_kind, config.memory_limit_kind);
     CHECK_EQ(context, parsed.memory_limit_bytes, config.memory_limit_bytes);
     CHECK_EQ(context, parsed.cpu_limit.seconds.value_or(0), 7);

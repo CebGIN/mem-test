@@ -1,5 +1,9 @@
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
@@ -40,6 +44,20 @@ bool wait_done(ExperimentController& controller,
         std::this_thread::sleep_for(10ms);
     }
     return controller.live().state == RunState::Done;
+}
+
+std::filesystem::path temp_dir(const std::string& tag) {
+    static std::atomic<std::uint64_t> counter{1};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           ("memtest-" + tag + "-" + std::to_string(stamp) + "-" +
+            std::to_string(counter.fetch_add(1)));
+}
+
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(stream),
+                       std::istreambuf_iterator<char>());
 }
 
 void completes_a_real_run(Context& context) {
@@ -115,6 +133,97 @@ void rejects_second_start(Context& context) {
     CHECK(context, wait_done(*controller, 3000ms));
 }
 
+void exports_real_history(Context& context) {
+    auto controller = make_controller();
+    ExperimentConfig config;
+    config.threads = 1;
+    config.work_units = 1000;
+    config.wall_timeout_ms = 5000;
+
+    std::string error;
+    CHECK(context, controller->start(config, &error));
+    CHECK(context, wait_done(*controller, 5000ms));
+    controller->take_results();
+
+    const std::filesystem::path dir = temp_dir("real-csv");
+    CHECK(context, controller->export_csv(dir, &error));
+    CHECK(context, error.empty());
+
+    std::filesystem::path summary;
+    std::filesystem::path detail;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("resumen_", 0) == 0) {
+            summary = entry.path();
+        } else if (name.rfind("detalle_", 0) == 0) {
+            detail = entry.path();
+        }
+    }
+    CHECK(context, !summary.empty());
+    CHECK(context, !detail.empty());
+    CHECK(context, read_file(summary).find("run-") != std::string::npos);
+    CHECK(context, read_file(detail).find("elapsed_ms") != std::string::npos);
+
+    std::error_code remove_error;
+    std::filesystem::remove_all(dir, remove_error);
+}
+
+void duration_is_real_and_system_is_sampled(Context& context) {
+    auto controller = make_controller();
+    ExperimentConfig config;
+    config.workload = WorkloadKind::Concurrency;
+    config.worker_mode = WorkerMode::NativeThreads;
+    config.threads = 2;
+    config.work_units = 0;
+    config.duration_ms = 600;
+    config.wall_timeout_ms = 2600;
+
+    std::string error;
+    CHECK(context, controller->start(config, &error));
+    CHECK(context, error.empty());
+    CHECK(context, wait_done(*controller, 5000ms));
+
+    const auto results = controller->take_results();
+    CHECK_EQ(context, results.size(), std::size_t{1});
+    if (!results.empty()) {
+        const ExperimentResult& result = results.front();
+        CHECK_EQ(context, result.outcome, RunOutcome::Completed);
+        CHECK(context, result.duration.count() >= 400);
+        CHECK(context, result.duration.count() < 3000);
+        CHECK(context, !result.series.empty());
+        CHECK(context, result.system_baseline.mem_total > 0);
+        CHECK(context, result.system_peak.mem_total > 0);
+        CHECK(context, result.system_cpu_peak_percent >= 0.0);
+    }
+}
+
+void memory_limit_hit_is_reachable(Context& context) {
+    auto controller = make_controller();
+    ExperimentConfig config;
+    config.workload = WorkloadKind::MemoryPressure;
+    config.memory_bytes = 64ull * 1024ull * 1024ull;
+    config.page_stride_bytes = 4096;
+    config.memory_limit_kind = MemoryLimitKind::AddressSpace;
+    config.memory_limit_bytes = 32ull * 1024ull * 1024ull;
+    config.duration_ms = 500;
+    config.wall_timeout_ms = 2500;
+
+    std::string error;
+    CHECK(context, controller->start(config, &error));
+    CHECK(context, error.empty());
+    CHECK(context, wait_done(*controller, 5000ms));
+
+    const auto results = controller->take_results();
+    CHECK_EQ(context, results.size(), std::size_t{1});
+    if (!results.empty()) {
+        const ExperimentResult& result = results.front();
+        if (result.limits.memory_status == LimitStatus::Applied) {
+            CHECK_EQ(context, result.outcome, RunOutcome::MemoryLimitHit);
+        }
+        CHECK(context, result.system_baseline.mem_total > 0);
+    }
+}
+
 void rejects_invalid_config(Context& context) {
     auto controller = make_controller();
     ExperimentConfig config;
@@ -134,6 +243,9 @@ Suite experiment_controller_suite() {
         {"ejecucion real completa", completes_a_real_run},
         {"stop cooperativo", stop_is_cooperative},
         {"rechaza segundo start", rejects_second_start},
+        {"exporta historial real", exports_real_history},
+        {"duracion real y sistema muestreado", duration_is_real_and_system_is_sampled},
+        {"limite de memoria alcanzable", memory_limit_hit_is_reachable},
         {"rechaza configuracion invalida", rejects_invalid_config},
     };
 }

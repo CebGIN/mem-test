@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -12,6 +13,7 @@
 #include <unistd.h>
 
 #include "domain/Types.hpp"
+#include "limits/CgroupCpuQuota.hpp"
 #include "limits/CpuLimitNotifier.hpp"
 #include "limits/ResourceLimiter.hpp"
 #include "metrics/MetricsSourceFactory.hpp"
@@ -137,6 +139,21 @@ int main(int argc, char** argv) {
     memtest::LimitReport limits =
         memtest::limits::ResourceLimiter().apply(config, &limit_detail);
 
+    std::unique_ptr<memtest::limits::CgroupCpuQuota> quota;
+    if (config.cpu_limit.quota_percent.has_value()) {
+        quota = std::make_unique<memtest::limits::CgroupCpuQuota>();
+        std::string quota_detail;
+        if (!quota->apply(*config.cpu_limit.quota_percent, &quota_detail)) {
+            emit_error("cpu_quota_unsupported",
+                       quota_detail.empty()
+                           ? "cuota cgroup no soportada; usá RLIMIT_CPU"
+                           : quota_detail + "; usá RLIMIT_CPU");
+            return 13;
+        }
+        limits.cpu_quota_status = memtest::LimitStatus::Applied;
+        limits.cpu_quota_applied = *config.cpu_limit.quota_percent;
+    }
+
     if (config.cpu_limit.seconds.has_value() &&
         limits.cpu_seconds_status == memtest::LimitStatus::Applied) {
         if (!memtest::limits::install_cpu_limit_notifier(
@@ -217,12 +234,21 @@ int main(int argc, char** argv) {
         outcome.detail += limit_detail;
     }
 
+    if (quota && quota->applied()) {
+        (void)quota->read_stats(limits.nr_throttled, limits.throttled_usec);
+        quota->cleanup();
+    }
+
     memtest::WorkerEvent result;
     result.type = memtest::WorkerEvent::Type::Result;
     result.fields["outcome"] =
         memtest::run_outcome_name(outcome.outcome);
     result.fields["expected"] = std::to_string(outcome.expected);
     result.fields["observed"] = std::to_string(outcome.observed);
+    if (limits.cpu_quota_status == memtest::LimitStatus::Applied) {
+        result.fields["nr_throttled"] = std::to_string(limits.nr_throttled);
+        result.fields["throttled_usec"] = std::to_string(limits.throttled_usec);
+    }
     if (!outcome.detail.empty()) {
         result.fields["detail"] = outcome.detail;
     }

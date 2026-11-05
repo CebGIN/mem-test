@@ -155,6 +155,13 @@ bool read_meminfo(MemInfo& out) {
 }
 
 bool parse_load_average(const std::string& data, double& load_1m) {
+    double second = 0.0;
+    double third = 0.0;
+    return parse_load_averages(data, load_1m, second, third);
+}
+
+bool parse_load_averages(const std::string& data, double& load_1m,
+                         double& load_5m, double& load_15m) {
     std::istringstream fields(data);
     double first = 0.0;
     double second = 0.0;
@@ -163,12 +170,94 @@ bool parse_load_average(const std::string& data, double& load_1m) {
         return false;
     }
     load_1m = first;
+    load_5m = second;
+    load_15m = third;
     return true;
 }
 
 bool read_load_average(double& load_1m) {
     std::string data;
     return read_file("/proc/loadavg", data) && parse_load_average(data, load_1m);
+}
+
+bool read_load_averages(double& load_1m, double& load_5m, double& load_15m) {
+    std::string data;
+    return read_file("/proc/loadavg", data) &&
+           parse_load_averages(data, load_1m, load_5m, load_15m);
+}
+
+bool parse_global_stat(const std::string& data, GlobalStat& out) {
+    GlobalStat parsed;
+    bool has_cpu = false;
+    std::istringstream lines(data);
+    std::string line;
+    while (std::getline(lines, line)) {
+        std::istringstream fields(line);
+        std::string key;
+        if (!(fields >> key)) {
+            continue;
+        }
+        if (key == "cpu") {
+            std::uint64_t user = 0, nice = 0, system = 0, idle = 0, iowait = 0;
+            std::uint64_t irq = 0, softirq = 0, steal = 0;
+            if (!(fields >> user >> nice >> system >> idle >> iowait >> irq >>
+                  softirq >> steal)) {
+                return false;
+            }
+            parsed.cpu_user = user;
+            parsed.cpu_nice = nice;
+            parsed.cpu_system = system;
+            parsed.cpu_idle = idle;
+            parsed.cpu_iowait = iowait;
+            parsed.cpu_irq = irq;
+            parsed.cpu_softirq = softirq;
+            parsed.cpu_steal = steal;
+            has_cpu = true;
+        } else if (key == "ctxt") {
+            if (!(fields >> parsed.ctxt)) return false;
+        } else if (key == "processes") {
+            if (!(fields >> parsed.processes)) return false;
+        } else if (key == "procs_running") {
+            if (!(fields >> parsed.procs_running)) return false;
+        } else if (key == "procs_blocked") {
+            if (!(fields >> parsed.procs_blocked)) return false;
+        }
+    }
+    if (!has_cpu) {
+        return false;
+    }
+    out = parsed;
+    return true;
+}
+
+bool read_global_stat(GlobalStat& out) {
+    std::string data;
+    return read_file("/proc/stat", data) && parse_global_stat(data, out);
+}
+
+bool parse_vmstat(const std::string& data, VmStat& out) {
+    VmStat parsed;
+    std::istringstream lines(data);
+    std::string key;
+    std::uint64_t value = 0;
+    while (lines >> key >> value) {
+        if (key == "pgfault") {
+            parsed.pgfault = value;
+        } else if (key == "pgmajfault") {
+            parsed.pgmajfault = value;
+        } else if (key == "pswpin") {
+            parsed.pswpin = value;
+        } else if (key == "pswpout") {
+            parsed.pswpout = value;
+        }
+    }
+    out = parsed;
+    return true;
+}
+
+bool read_vmstat(VmStat& out) {
+    std::string data;
+    return read_file("/proc/vmstat", data) && parse_vmstat(data, out);
 }
 
 }  // namespace memtest::metrics

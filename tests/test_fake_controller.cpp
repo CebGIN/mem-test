@@ -1,5 +1,9 @@
+#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
 
@@ -31,6 +35,20 @@ bool wait_for_done(FakeExperimentController& controller, std::chrono::millisecon
         std::this_thread::sleep_for(10ms);
     }
     return controller.live().state == RunState::Done;
+}
+
+std::filesystem::path temp_dir(const std::string& tag) {
+    static std::atomic<std::uint64_t> counter{1};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           ("memtest-" + tag + "-" + std::to_string(stamp) + "-" +
+            std::to_string(counter.fetch_add(1)));
+}
+
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(stream),
+                       std::istreambuf_iterator<char>());
 }
 
 void test_validate_uses_guardrails(Context& ctx) {
@@ -182,12 +200,54 @@ void test_memory_pressure_limit_hit(Context& ctx) {
     }
 }
 
-void test_export_csv_pending(Context& ctx) {
+void test_export_csv_writes_files(Context& ctx) {
     FakeExperimentController controller(test_system());
+    const std::filesystem::path dir = temp_dir("fake-csv");
 
     std::string error;
-    CHECK(ctx, !controller.export_csv("build/csv-fake", &error));
+    CHECK(ctx, !controller.export_csv(dir, &error));
     CHECK(ctx, !error.empty());
+
+    ExperimentConfig config;
+    config.threads = 2;
+    config.work_units = 1000;
+    config.wall_timeout_ms = 120;
+
+    CHECK(ctx, controller.start(config, &error));
+    CHECK(ctx, wait_for_done(controller, 2000ms));
+    controller.take_results();
+
+    CHECK(ctx, controller.export_csv(dir, &error));
+    CHECK(ctx, error.empty());
+
+    std::filesystem::path summary;
+    std::filesystem::path detail;
+    std::size_t summaries = 0;
+    std::size_t details = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("resumen_", 0) == 0) {
+            ++summaries;
+            summary = entry.path();
+        } else if (name.rfind("detalle_", 0) == 0) {
+            ++details;
+            detail = entry.path();
+        }
+    }
+    CHECK_EQ(ctx, summaries, std::size_t{1});
+    CHECK_EQ(ctx, details, std::size_t{1});
+
+    const std::string summary_text = read_file(summary);
+    CHECK(ctx, summary_text.find("run_id,timestamp") != std::string::npos);
+    CHECK(ctx, summary_text.find("fake-1") != std::string::npos);
+    CHECK(ctx, summary_text.find("Completed") != std::string::npos);
+
+    const std::string detail_text = read_file(detail);
+    CHECK(ctx, detail_text.find("run_id,elapsed_ms") != std::string::npos);
+    CHECK(ctx, detail_text.find("fake-1") != std::string::npos);
+
+    std::error_code remove_error;
+    std::filesystem::remove_all(dir, remove_error);
 }
 
 }  // namespace
@@ -201,7 +261,7 @@ Suite fake_controller_suite() {
         {"start_while_running_is_rejected", test_start_while_running_is_rejected},
         {"shared_counter_reports_losses", test_shared_counter_reports_losses},
         {"memory_pressure_limit_hit", test_memory_pressure_limit_hit},
-        {"export_csv_pending", test_export_csv_pending},
+        {"export_csv_writes_files", test_export_csv_writes_files},
     };
 }
 
