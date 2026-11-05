@@ -14,7 +14,6 @@ namespace {
 using guayaba::ContentAlignment;
 using guayaba::Control;
 using guayaba::Graph;
-using guayaba::Grow;
 using guayaba::HBox;
 using guayaba::Label;
 using guayaba::ListView;
@@ -40,19 +39,22 @@ MetricsPanel MetricsPanel::build(const NodeRef<Control>& parent) {
 
     NodeRef<VBox> box = add_filling_box(container, "metrics_box", 0);
 
-    NodeRef<HBox> header = add_filling_row(box, "metrics_header", 1);
+    NodeRef<HBox> header = add_filling_row(box, "metrics_header", 2);
     header->set_content_alignment(ContentAlignment::Begin);
     add_fixed_label(header, "metrics_title", "Métricas");
 
     panel.metric_ = header->add_child<ListView>("metrics_metric");
     panel.metric_->set_custom_minimum_size({12, 1});
-    panel.metric_->set_anchor_right(1.0f);
-    panel.metric_->set_grow_x(Grow::Both);
     panel.metric_->set_items({"RSS (MiB)", "VSZ (MiB)", "CPU (s)", "Fallos"});
     panel.metric_->select_first();
+    style_list(panel.metric_);
 
     panel.values_ = add_reserved_label(box, "metrics_values", "", 3);
     panel.values_->set_text("Esperando la primera ejecución.");
+
+    panel.graph_empty_ =
+        add_reserved_label(box, "metrics_graph_empty", "Esperando muestras...", 1, true);
+    panel.graph_empty_->set_text_color("BRIGHT_BLACK");
 
     panel.graph_ = box->add_child<Graph>("metrics_graph");
     panel.graph_->set_anchor_preset(guayaba::AnchorPreset::FullRect);
@@ -62,6 +64,7 @@ MetricsPanel MetricsPanel::build(const NodeRef<Control>& parent) {
     panel.graph_->set_fill(true);
 
     panel.hint_ = add_reserved_label(box, "metrics_hint", "esperando muestras", 1);
+    panel.hint_->set_text_color("BRIGHT_BLACK");
     return panel;
 }
 
@@ -70,16 +73,21 @@ void MetricsPanel::refresh(const LiveState& live) {
     const bool has_samples = !live.recent.empty();
 
     if (!has_samples) {
+        graph_->set_values({});
+        graph_->set_visible(false);
+        graph_empty_->set_visible(true);
+        hint_->set_text("");
         if (live.state == RunState::Done) {
             values_->set_text("La ejecución terminó sin muestras.");
-            hint_->set_text("sin muestras");
+            graph_empty_->set_text("La ejecución no produjo muestras.");
         } else {
             values_->set_text("Esperando la primera ejecución.\nF5 inicia · F8 exporta");
-            hint_->set_text("esperando muestras");
+            graph_empty_->set_text("Esperando muestras...");
         }
-        graph_->set_values({});
         return;
     }
+    graph_->set_visible(true);
+    graph_empty_->set_visible(false);
 
     std::ostringstream values;
     values << "RSS " << mib(last.vm_rss) << "  Pico " << mib(last.vm_hwm) << '\n';

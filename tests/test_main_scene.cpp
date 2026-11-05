@@ -235,7 +235,9 @@ bool wait_done(FakeExperimentController& controller, SceneManager& manager,
         std::this_thread::sleep_for(5ms);
     }
     if (saw_done) {
-        // Un frame extra: drena el resultado pendiente y actualiza los paneles.
+        // Dos frames extra: drena el resultado y deja que el layout aplique la
+        // visibilidad de la lista y la gráfica.
+        manager.run_frame(renderer, {});
         manager.run_frame(renderer, {});
     }
     return saw_done;
@@ -254,6 +256,7 @@ bool wait_done(ExperimentController& controller, SceneManager& manager,
         std::this_thread::sleep_for(5ms);
     }
     if (saw_done) {
+        manager.run_frame(renderer, {});
         manager.run_frame(renderer, {});
     }
     return saw_done;
@@ -295,6 +298,7 @@ void test_start_stop_updates_panels(Context& ctx) {
     if (history_list.get() != nullptr) {
         CHECK_EQ(ctx, history_list->item_count(), std::size_t{1});
         CHECK_EQ(ctx, history_list->selected(), 0);
+        CHECK(ctx, history_list->get_rect().size.y > 0);
     }
 
     const auto graph = root->get_node_or_null<Graph>(
@@ -302,6 +306,7 @@ void test_start_stop_updates_panels(Context& ctx) {
     CHECK(ctx, graph.get() != nullptr);
     if (graph.get() != nullptr) {
         CHECK(ctx, !graph->get_values().empty());
+        CHECK(ctx, graph->get_rect().size.y > 0);
     }
 
     const auto repeat = root->get_node_or_null<Button>(

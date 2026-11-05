@@ -24,6 +24,7 @@ public:
 
 private:
     guayaba::NodeRef<guayaba::Label> title_;
+    guayaba::NodeRef<guayaba::Label> placeholder_;
     guayaba::NodeRef<guayaba::ListView> list_;
 };
 

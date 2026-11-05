@@ -17,7 +17,6 @@ namespace {
 using guayaba::ContentAlignment;
 using guayaba::Control;
 using guayaba::Graph;
-using guayaba::Grow;
 using guayaba::HBox;
 using guayaba::Label;
 using guayaba::ListView;
@@ -104,25 +103,27 @@ ComparePanel ComparePanel::build(const NodeRef<Control>& parent) {
 
     NodeRef<VBox> box = add_filling_box(container, "compare_box", 0);
 
-    NodeRef<HBox> header = add_filling_row(box, "compare_header", 1);
+    NodeRef<HBox> header = add_filling_row(box, "compare_header", 2);
     header->set_content_alignment(ContentAlignment::Begin);
     add_fixed_label(header, "compare_axis_label", "Eje");
 
     panel.parameter_ = header->add_child<ListView>("compare_parameter");
     panel.parameter_->set_custom_minimum_size({11, 1});
-    panel.parameter_->set_anchor_right(1.0f);
-    panel.parameter_->set_grow_x(Grow::Both);
     panel.parameter_->set_items({"Hilos", "Memoria MiB", "CPU s"});
     panel.parameter_->select_first();
+    style_list(panel.parameter_);
 
     add_fixed_label(header, "compare_metric_label", "Métrica");
 
     panel.metric_ = header->add_child<ListView>("compare_metric");
-    panel.metric_->set_custom_minimum_size({12, 1});
-    panel.metric_->set_anchor_right(1.0f);
-    panel.metric_->set_grow_x(Grow::Both);
-    panel.metric_->set_items({"RSS pico MiB", "CPU s", "Fallos", "Duración s"});
+    panel.metric_->set_custom_minimum_size({10, 1});
+    panel.metric_->set_items({"RSS MiB", "CPU s", "Fallos", "Dur. s"});
     panel.metric_->select_first();
+    style_list(panel.metric_);
+
+    panel.empty_ = add_reserved_label(
+        box, "compare_empty", "Sin ejecuciones para comparar.", 2, true);
+    panel.empty_->set_text_color("BRIGHT_BLACK");
 
     panel.graph_ = box->add_child<Graph>("compare_graph");
     panel.graph_->set_anchor_preset(guayaba::AnchorPreset::FullRect);
@@ -154,9 +155,15 @@ void ComparePanel::refresh() {
 
     if (results_.empty()) {
         graph_->set_values({});
-        table_->set_text("Sin ejecuciones para comparar.");
+        graph_->set_visible(false);
+        table_->set_visible(false);
+        empty_->set_visible(true);
         return;
     }
+    empty_->set_visible(false);
+    graph_->set_visible(true);
+    table_->set_visible(true);
+    table_->set_text_color("WHITE");
 
     // Se comparan las últimas ejecuciones para que la tabla quepa; la gráfica
     // usa la misma ventana y queda ordenada de menor a mayor parámetro.

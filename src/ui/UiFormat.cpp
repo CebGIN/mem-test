@@ -130,15 +130,15 @@ std::vector<std::string> workload_items() {
 }
 
 std::vector<std::string> worker_mode_items() {
-    return {"Hilos nativos", "Tareas runtime"};
+    return {"Nativos", "Tareas"};
 }
 
 std::vector<std::string> sync_mode_items() {
-    return {"Sin sincronización", "Mutex", "Atómico"};
+    return {"Ninguna", "Mutex", "Atómico"};
 }
 
 std::vector<std::string> memory_limit_items() {
-    return {"Sin límite", "Espacio de direcciones (AS)", "Segmento de datos (DATA)"};
+    return {"Sin límite", "AS", "DATA"};
 }
 
 }  // namespace memtest::ui

@@ -17,7 +17,6 @@ using guayaba::Button;
 using guayaba::CheckBox;
 using guayaba::ContentAlignment;
 using guayaba::Control;
-using guayaba::Grow;
 using guayaba::HBox;
 using guayaba::Label;
 using guayaba::ListView;
@@ -43,18 +42,25 @@ int selected_or(const NodeRef<ListView>& list, int fallback) {
     return index >= 0 ? index : fallback;
 }
 
+// Etiqueta de campo con ancho fijo: alinea todos los controles de la columna.
+NodeRef<Label> add_form_label(const NodeRef<Control>& parent, const std::string& name,
+                              const std::string& text) {
+    NodeRef<Label> label = add_fixed_label(parent, name, text);
+    label->set_custom_minimum_size({18, 1});
+    return label;
+}
+
 SpinField add_spin_field(const NodeRef<Control>& parent, const std::string& name,
                          const std::string& label, double minimum, double maximum,
                          double step, double value) {
     SpinField field;
     field.row = add_filling_row(parent, name + "_row");
     field.row->set_content_alignment(ContentAlignment::Begin);
-    add_fixed_label(field.row, name + "_label", label);
+    add_form_label(field.row, name + "_label", label);
 
     field.spin = field.row->add_child<SpinBox>(name);
-    field.spin->set_custom_minimum_size({9, 1});
-    field.spin->set_anchor_right(1.0f);
-    field.spin->set_grow_x(Grow::Both);
+    field.spin->set_custom_minimum_size({12, 1});
+    field.spin->set_background_color("BLACK");
     field.spin->set_range(minimum, maximum);
     field.spin->set_step(step);
     field.spin->set_decimals(0);
@@ -68,14 +74,13 @@ ListField add_list_field(const NodeRef<Control>& parent, const std::string& name
     ListField field;
     field.row = add_filling_row(parent, name + "_row");
     field.row->set_content_alignment(ContentAlignment::Begin);
-    add_fixed_label(field.row, name + "_label", label);
+    add_form_label(field.row, name + "_label", label);
 
     field.list = field.row->add_child<ListView>(name);
     field.list->set_custom_minimum_size({minimum_width, rows});
-    field.list->set_anchor_right(1.0f);
-    field.list->set_grow_x(Grow::Both);
     field.list->set_items(std::move(items));
     field.list->select_first();
+    style_list(field.list);
     return field;
 }
 
@@ -126,25 +131,27 @@ ExperimentForm ExperimentForm::build(const NodeRef<Control>& parent,
 
     NodeRef<ScrollView> scroll = scroll_margin->add_child<ScrollView>("form_scroll");
     scroll->set_anchor_preset(guayaba::AnchorPreset::FullRect);
+    scroll->get_track_stylebox().set_background_color("BLACK");
+    scroll->get_handle_stylebox().set_background_color("BRIGHT_BLACK");
 
     NodeRef<VBox> box = add_filling_box(scroll, "form_box", 1);
+    box->set_content_alignment(ContentAlignment::Begin);
 
     // Selector de carga.
     add_fixed_label(box, "workload_label", "Experimento");
     form.workload_ = box->add_child<ListView>("workload");
-    form.workload_->set_custom_minimum_size({0, 4});
-    form.workload_->set_anchor_right(1.0f);
-    form.workload_->set_grow_x(Grow::Both);
+    form.workload_->set_custom_minimum_size({30, 4});
     form.workload_->set_items(workload_items());
     form.workload_->select_first();
+    style_list(form.workload_);
 
     const ListField worker = add_list_field(
-        box, "worker", "Worker", worker_mode_items(), 14, 2);
+        box, "worker", "Worker", worker_mode_items(), 10, 2);
     form.worker_row_ = worker.row;
     form.worker_mode_ = worker.list;
 
     const ListField sync = add_list_field(
-        box, "sync", "Sincronización", sync_mode_items(), 14, 3);
+        box, "sync", "Sincronización", sync_mode_items(), 10, 3);
     form.sync_row_ = sync.row;
     form.sync_mode_ = sync.list;
 
@@ -188,6 +195,7 @@ ExperimentForm ExperimentForm::build(const NodeRef<Control>& parent,
 
     form.cpu_limit_enabled_ = box->add_child<CheckBox>("cpu_limit");
     form.cpu_limit_enabled_->set_text("Límite de CPU (RLIMIT_CPU)");
+    form.cpu_limit_enabled_->set_background_color(0);
     form.cpu_limit_enabled_->set_checked(initial.cpu_limit.seconds.has_value());
 
     const SpinField cpu_seconds = add_spin_field(
@@ -201,7 +209,7 @@ ExperimentForm ExperimentForm::build(const NodeRef<Control>& parent,
     cpu_quota->set_text_color("BRIGHT_BLACK");
 
     const ListField memory_limit = add_list_field(
-        box, "memory_limit", "Límite de memoria", memory_limit_items(), 12, 3);
+        box, "memory_limit", "Límite de memoria", memory_limit_items(), 10, 3);
     form.memory_limit_ = memory_limit.list;
 
     const std::uint64_t initial_limit_mib =
