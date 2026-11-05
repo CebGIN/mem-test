@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/IExperimentController.hpp"
+#include "core/ResultStore.hpp"
 #include "domain/Validation.hpp"
 #include "runtime/CancellationToken.hpp"
 
@@ -47,7 +48,7 @@ private:
     mutable std::mutex mutex_;
     LiveState live_;
     std::deque<ExperimentResult> pending_;
-    std::vector<ExperimentResult> history_;
+    ResultStore history_;
     std::thread runner_;
     std::unique_ptr<CancellationToken> token_;
     SystemInfo system_;

@@ -48,6 +48,8 @@ add_library(memtest_core STATIC
     src/app/ExperimentController.cpp
     src/app/ExperimentRunner.cpp
     src/app/FakeExperimentController.cpp
+    src/core/CsvExporter.cpp
+    src/core/ResultStore.cpp
     src/core/SystemInfo.cpp
     src/domain/Validation.cpp
     src/limits/CpuLimitNotifierPosix.cpp

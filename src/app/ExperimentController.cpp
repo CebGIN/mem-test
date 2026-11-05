@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "app/ExperimentRunner.hpp"
+#include "core/CsvExporter.hpp"
 #include "metrics/IMetricsSource.hpp"
 #include "process/IProcessSupervisor.hpp"
 
@@ -134,16 +135,17 @@ std::vector<ExperimentResult> ExperimentController::take_results() {
 
 std::vector<ExperimentResult> ExperimentController::history() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return history_;
+    return history_.snapshot();
 }
 
 bool ExperimentController::export_csv(const std::filesystem::path& dir,
                                       std::string* error) {
-    (void)dir;
-    if (error != nullptr) {
-        *error = "La exportación CSV se implementa en WP3.";
+    std::vector<ExperimentResult> results;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        results = history_.snapshot();
     }
-    return false;
+    return CsvExporter::write(results, dir, nullptr, error);
 }
 
 void ExperimentController::run(ExperimentConfig config) {
@@ -188,7 +190,6 @@ void ExperimentController::run(ExperimentConfig config) {
 
     std::lock_guard<std::mutex> lock(mutex_);
     pending_.push_back(result);
-    history_.push_back(result);
     live_.state = RunState::Done;
     live_.last = result.last;
     if (!result.detail.empty()) {
@@ -196,6 +197,7 @@ void ExperimentController::run(ExperimentConfig config) {
     } else {
         live_.message = "Ejecución terminada";
     }
+    history_.add(std::move(result));
     running_ = false;
     stop_requested_ = false;
 }
