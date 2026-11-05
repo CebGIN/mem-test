@@ -77,7 +77,13 @@ memtest_target_warnings(memtest_core)
 # --- Aplicación TUI --------------------------------------------------------------
 # La capa ui/ solo depende de IExperimentController y domain/; se separa en su
 # propia librería para que la prueben tanto la app como los tests headless.
-add_library(memtest_ui STATIC src/ui/MainScene.cpp)
+add_library(memtest_ui STATIC
+    src/ui/ComparePanel.cpp
+    src/ui/ExperimentForm.cpp
+    src/ui/HistoryPanel.cpp
+    src/ui/MainScene.cpp
+    src/ui/MetricsPanel.cpp
+    src/ui/UiFormat.cpp)
 target_link_libraries(memtest_ui PUBLIC
     memtest_core
     GuayabaTUIEngine::GuayabaTUIEngine)
