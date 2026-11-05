@@ -35,6 +35,31 @@ struct MemInfo {
     std::uint64_t swap_free_bytes = 0;
 };
 
+// Contadores globales de /proc/stat. Los tiempos de CPU están en jiffies; el
+// muestreador los convierte a porcentajes por diferencia entre dos lecturas.
+struct GlobalStat {
+    std::uint64_t cpu_user = 0;
+    std::uint64_t cpu_nice = 0;
+    std::uint64_t cpu_system = 0;
+    std::uint64_t cpu_idle = 0;
+    std::uint64_t cpu_iowait = 0;
+    std::uint64_t cpu_irq = 0;
+    std::uint64_t cpu_softirq = 0;
+    std::uint64_t cpu_steal = 0;
+    std::uint64_t ctxt = 0;
+    std::uint64_t processes = 0;
+    std::uint64_t procs_running = 0;
+    std::uint64_t procs_blocked = 0;
+};
+
+// Contadores acumulados de /proc/vmstat que interesan al laboratorio.
+struct VmStat {
+    std::uint64_t pgfault = 0;
+    std::uint64_t pgmajfault = 0;
+    std::uint64_t pswpin = 0;
+    std::uint64_t pswpout = 0;
+};
+
 std::uint64_t clock_ticks_per_second();
 std::uint64_t ticks_to_ns(std::uint64_t ticks);
 std::uint64_t page_size_bytes();
@@ -52,10 +77,18 @@ bool read_proc_stat(pid_t pid, ProcStat& out);
 // MemAvailable, se aproxima con MemFree + Buffers + Cached.
 bool parse_meminfo(const std::string& data, MemInfo& out);
 bool parse_load_average(const std::string& data, double& load_1m);
+bool parse_load_averages(const std::string& data, double& load_1m,
+                         double& load_5m, double& load_15m);
+bool parse_global_stat(const std::string& data, GlobalStat& out);
+bool parse_vmstat(const std::string& data, VmStat& out);
 
-// Leen /proc/meminfo y /proc/loadavg y delegan en los parsers anteriores.
+// Leen /proc/meminfo, /proc/loadavg, /proc/stat y /proc/vmstat y delegan en
+// los parsers anteriores.
 bool read_meminfo(MemInfo& out);
 bool read_load_average(double& load_1m);
+bool read_load_averages(double& load_1m, double& load_5m, double& load_15m);
+bool read_global_stat(GlobalStat& out);
+bool read_vmstat(VmStat& out);
 
 }  // namespace memtest::metrics
 

@@ -130,6 +130,30 @@ bool WinMetricsSource::sample(pid_t pid, MetricsSnapshot& out) const {
     return true;
 }
 
+bool WinMetricsSource::sample_system(SystemSnapshot& out) const {
+    MEMORYSTATUSEX global{};
+    if (!read_global_memory(global)) {
+        return false;
+    }
+
+    SystemSnapshot snap;
+    snap.mem_total = global.ullTotalPhys;
+    snap.mem_available = global.ullAvailPhys;
+    snap.mem_used = global.ullTotalPhys > global.ullAvailPhys
+                        ? global.ullTotalPhys - global.ullAvailPhys
+                        : 0;
+    snap.swap_total = approx_swap_total(global);
+    snap.swap_free = approx_swap_free(global);
+    snap.swap_used = snap.swap_total > snap.swap_free
+                         ? snap.swap_total - snap.swap_free
+                         : 0;
+    snap.swap_available = snap.swap_total > 0;
+    // Windows no expone load average ni contadores equivalentes a /proc/stat;
+    // la UI los muestra como no disponibles.
+    out = snap;
+    return true;
+}
+
 SystemInfo WinMetricsSource::system_info() const {
     SystemInfo info;
     MEMORYSTATUSEX global{};

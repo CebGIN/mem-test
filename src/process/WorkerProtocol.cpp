@@ -171,6 +171,16 @@ std::optional<WorkerMode> worker_mode_from_name(std::string_view text) {
     return std::nullopt;
 }
 
+std::string load_mode_name(LoadMode mode) {
+    return mode == LoadMode::TotalWork ? "total" : "duration";
+}
+
+std::optional<LoadMode> load_mode_from_name(std::string_view text) {
+    if (text == "duration" || text == "time") return LoadMode::Duration;
+    if (text == "total" || text == "total_work") return LoadMode::TotalWork;
+    return std::nullopt;
+}
+
 std::string sync_mode_name(SyncMode mode) {
     switch (mode) {
         case SyncMode::None: return "none";
@@ -237,13 +247,16 @@ std::string encode_config(const ExperimentConfig& config) {
     std::ostringstream out;
     out << "workload=" << workload_name(config.workload)
         << " worker_mode=" << worker_mode_name(config.worker_mode)
+        << " load_mode=" << load_mode_name(config.load_mode)
         << " sync_mode=" << sync_mode_name(config.sync_mode)
         << " threads=" << config.threads
         << " work_units=" << config.work_units
         << " increments=" << config.increments_per_thread
         << " memory_bytes=" << config.memory_bytes
         << " page_stride=" << config.page_stride_bytes
+        << " force_swap=" << (config.force_swap ? 1 : 0)
         << " wall_timeout_ms=" << config.wall_timeout_ms
+        << " duration_ms=" << config.duration_ms
         << " memory_limit_kind=" << memory_kind_name(config.memory_limit_kind)
         << " memory_limit_bytes=" << config.memory_limit_bytes
         << " cpu_seconds=" << config.cpu_limit.seconds.value_or(0)
@@ -284,6 +297,13 @@ bool parse_config(std::string_view line, ExperimentConfig& out,
                 return false;
             }
             config.worker_mode = *parsed;
+        } else if (key == "load_mode") {
+            const auto parsed = load_mode_from_name(value);
+            if (!parsed) {
+                set_error(error, "load_mode invalido");
+                return false;
+            }
+            config.load_mode = *parsed;
         } else if (key == "sync_mode") {
             const auto parsed = sync_mode_from_name(value);
             if (!parsed) {
@@ -305,9 +325,17 @@ bool parse_config(std::string_view line, ExperimentConfig& out,
         } else if (key == "page_stride") {
             if (!parse_u64(value, config.page_stride_bytes, error,
                            "page_stride")) return false;
+        } else if (key == "force_swap") {
+            int enabled = 0;
+            if (!parse_int(value, enabled, error, "force_swap")) return false;
+            config.force_swap = enabled != 0;
         } else if (key == "wall_timeout_ms") {
             if (!parse_int(value, config.wall_timeout_ms, error,
                            "wall_timeout_ms")) return false;
+        } else if (key == "duration_ms") {
+            if (!parse_int(value, config.duration_ms, error, "duration_ms")) {
+                return false;
+            }
         } else if (key == "memory_limit_kind") {
             const auto parsed = memory_kind_from_name(value);
             if (!parsed) {

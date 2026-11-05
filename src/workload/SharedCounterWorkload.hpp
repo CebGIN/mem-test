@@ -6,8 +6,9 @@
 namespace memtest {
 
 // Varias tareas incrementan un contador compartido con o sin sincronizacion
-// (Arquitectura.md §12.4). `None` usa load/store relajados y puede perder
-// actualizaciones; eso es el resultado observado, no un fallo.
+// (Arquitectura.md §12.4). `None` usa un contador no atomico y provoca un data
+// race real, de modo que las actualizaciones perdidas no son deterministas;
+// eso es el resultado observado, no un fallo. `Mutex` y `Atomic` son exactos.
 class SharedCounterWorkload final : public IWorkload {
 public:
     WorkloadOutcome run(const WorkloadContext& context) override;

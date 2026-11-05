@@ -1,6 +1,7 @@
 #ifndef MEMTEST_UI_MAINSCENE_HPP
 #define MEMTEST_UI_MAINSCENE_HPP
 
+#include <filesystem>
 #include <memory>
 
 #include "app/IExperimentController.hpp"
@@ -13,13 +14,13 @@ class Node;
 
 namespace memtest::ui {
 
-// Construye el esqueleto de la escena principal de WP0: cabecera, formulario
-// mock, panel de métricas, historial y barra de estado. La escena solo conoce
-// IExperimentController y tipos de domain/; los workers los maneja el
-// controlador. WP3 reemplaza el mock por el formulario real.
-std::unique_ptr<guayaba::Node> build_main_scene(IExperimentController& controller,
-                                                const SystemInfo& info,
-                                                const GuardrailLimits& limits);
+// Construye la escena principal de WP3: formulario adaptativo, métricas con
+// gráfica, historial, comparación y barra de estado. La escena solo conoce
+// IExperimentController y domain/; no crea procesos ni lee /proc.
+std::unique_ptr<guayaba::Node> build_main_scene(
+    IExperimentController& controller, const SystemInfo& info,
+    const GuardrailLimits& limits,
+    std::filesystem::path export_dir = "exportaciones");
 
 }  // namespace memtest::ui
 

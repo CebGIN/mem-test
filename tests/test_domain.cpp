@@ -13,7 +13,7 @@ constexpr std::uint64_t kMiB = 1024ull * 1024ull;
 GuardrailLimits limits_for(int cores, std::uint64_t total_ram = 8 * kGiB) {
     SystemInfo info;
     info.total_ram = total_ram;
-    info.available_ram = total_ram / 2;
+    info.available_ram = total_ram;
     info.cores = cores;
     return guardrails_from(info);
 }
@@ -60,25 +60,33 @@ void test_defaults(Context& ctx) {
 }
 
 void test_guardrails(Context& ctx) {
-    // 25% de 8 GiB son 2 GiB, pero el tope absoluto es 1 GiB.
+    // 50% de 8 GiB son 4 GiB; ya no hay tope absoluto de 1 GiB.
     const GuardrailLimits big = limits_for(4);
-    CHECK_EQ(ctx, big.max_memory_bytes, kGiB);
+    CHECK_EQ(ctx, big.max_memory_bytes, 4 * kGiB);
     CHECK_EQ(ctx, big.max_threads, 32);
     CHECK_EQ(ctx, big.max_wall_timeout_ms, 120000);
     CHECK_EQ(ctx, big.max_cpu_seconds, 120);
 
-    // 25% de 2 GiB son 512 MiB: manda el porcentaje.
+    // 50% de 2 GiB son 1 GiB.
     const GuardrailLimits small = limits_for(2, 2 * kGiB);
-    CHECK_EQ(ctx, small.max_memory_bytes, kGiB / 2);
+    CHECK_EQ(ctx, small.max_memory_bytes, kGiB);
     CHECK_EQ(ctx, small.max_threads, 16);
 
     // El tope de hilos no crece más allá de 64.
     const GuardrailLimits many = limits_for(64);
     CHECK_EQ(ctx, many.max_threads, 64);
 
-    // Sin datos del sistema se usan valores conservadores.
+    // El tope tambien respeta la RAM disponible, no solo la total.
+    SystemInfo low_available;
+    low_available.total_ram = 8 * kGiB;
+    low_available.available_ram = 2 * kGiB;
+    low_available.cores = 4;
+    const GuardrailLimits available = guardrails_from(low_available);
+    CHECK_EQ(ctx, available.max_memory_bytes, kGiB);
+
+    // Sin datos del sistema se usan valores conservadores: 4 GiB de RAM.
     const GuardrailLimits fallback = guardrails_from(SystemInfo{});
-    CHECK_EQ(ctx, fallback.max_memory_bytes, kGiB);
+    CHECK_EQ(ctx, fallback.max_memory_bytes, 2 * kGiB);
     CHECK_EQ(ctx, fallback.max_threads, 8);
 }
 
@@ -101,6 +109,13 @@ void test_threads(Context& ctx) {
     ExperimentConfig at_limit;
     at_limit.threads = limits.max_threads;
     CHECK(ctx, validate(at_limit, limits).ok());
+
+    ExperimentConfig counter;
+    counter.workload = WorkloadKind::SharedCounter;
+    counter.threads = 1;
+    CHECK(ctx, has_issue(validate(counter, limits), "threads"));
+    counter.threads = 2;
+    CHECK(ctx, validate(counter, limits).ok());
 }
 
 void test_work_units(Context& ctx) {
@@ -113,6 +128,13 @@ void test_work_units(Context& ctx) {
     ExperimentConfig memory = memory_config();
     memory.work_units = 0;
     CHECK(ctx, validate(memory, limits).ok());
+
+    ExperimentConfig total;
+    total.load_mode = LoadMode::TotalWork;
+    total.work_units = 0;
+    CHECK(ctx, has_issue(validate(total, limits), "work_units"));
+    total.work_units = 1;
+    CHECK(ctx, validate(total, limits).ok());
 }
 
 void test_increments(Context& ctx) {
@@ -154,6 +176,16 @@ void test_memory_request(Context& ctx) {
     fits.memory_bytes = 256 * kMiB;
     CHECK(ctx, validate(fits, limits).ok());
 
+    // El tope ahora es la mitad de la RAM (4 GiB con 8 GiB): se permiten
+    // reservas por encima de 1 GiB.
+    ExperimentConfig at_limit = memory_config();
+    at_limit.memory_bytes = limits.max_memory_bytes;
+    CHECK(ctx, validate(at_limit, limits).ok());
+
+    ExperimentConfig two_gib = memory_config();
+    two_gib.memory_bytes = 2 * kGiB;
+    CHECK(ctx, validate(two_gib, limits).ok());
+
     // El paso de página no puede ser cero: el toque de páginas no avanzaría.
     ExperimentConfig stride = memory_config();
     stride.page_stride_bytes = 0;
@@ -172,17 +204,43 @@ void test_memory_limit(Context& ctx) {
     too_big.memory_limit_bytes = limits.max_memory_bytes + 1;
     CHECK(ctx, has_issue(validate(too_big, limits), "memory_limit_bytes"));
 
+    // Una reserva mayor que el límite es válida: el worker debe reportar
+    // MemoryLimitHit. El laboratorio necesita poder ejecutar ese caso.
     ExperimentConfig smaller_than_reservation = memory_config();
     smaller_than_reservation.memory_limit_kind = MemoryLimitKind::AddressSpace;
     smaller_than_reservation.memory_bytes = 256 * kMiB;
     smaller_than_reservation.memory_limit_bytes = 128 * kMiB;
-    CHECK(ctx, has_issue(validate(smaller_than_reservation, limits), "memory_limit_bytes"));
+    CHECK(ctx, validate(smaller_than_reservation, limits).ok());
 
     ExperimentConfig ok = memory_config();
     ok.memory_limit_kind = MemoryLimitKind::AddressSpace;
     ok.memory_bytes = 128 * kMiB;
     ok.memory_limit_bytes = 512 * kMiB;
     CHECK(ctx, validate(ok, limits).ok());
+}
+
+void test_duration(Context& ctx) {
+    const GuardrailLimits limits = limits_for(4);
+
+    ExperimentConfig legacy = ExperimentConfig{};
+    legacy.work_units = 0;
+    legacy.duration_ms = 0;
+    CHECK(ctx, has_issue(validate(legacy, limits), "work_units"));
+
+    ExperimentConfig timed = ExperimentConfig{};
+    timed.work_units = 0;
+    timed.increments_per_thread = 0;
+    timed.duration_ms = 2000;
+    timed.wall_timeout_ms = 5000;
+    CHECK(ctx, validate(timed, limits).ok());
+
+    ExperimentConfig too_long = timed;
+    too_long.duration_ms = limits.max_wall_timeout_ms;
+    CHECK(ctx, has_issue(validate(too_long, limits), "duration_ms"));
+
+    ExperimentConfig short_watchdog = timed;
+    short_watchdog.wall_timeout_ms = short_watchdog.duration_ms;
+    CHECK(ctx, has_issue(validate(short_watchdog, limits), "wall_timeout_ms"));
 }
 
 void test_cpu_limits(Context& ctx) {
@@ -211,6 +269,15 @@ void test_cpu_limits(Context& ctx) {
     ExperimentConfig valid_quota;
     valid_quota.cpu_limit.quota_percent = 50;
     CHECK(ctx, validate(valid_quota, limits).ok());
+
+    ExperimentConfig cpu_test;
+    cpu_test.workload = WorkloadKind::CpuLimit;
+    cpu_test.threads = 1;
+    CHECK(ctx, has_issue(validate(cpu_test, limits), "cpu_limit"));
+    cpu_test.cpu_limit.seconds = 5;
+    CHECK(ctx, validate(cpu_test, limits).ok());
+    cpu_test.threads = 2;
+    CHECK(ctx, has_issue(validate(cpu_test, limits), "threads"));
 }
 
 void test_reports_every_issue(Context& ctx) {
@@ -242,6 +309,7 @@ Suite domain_suite() {
         {"wall_timeout", test_wall_timeout},
         {"memory_request", test_memory_request},
         {"memory_limit", test_memory_limit},
+        {"duration", test_duration},
         {"cpu_limits", test_cpu_limits},
         {"reports_every_issue", test_reports_every_issue},
     };
