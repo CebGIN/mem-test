@@ -1,0 +1,6 @@
+nr_free_pages 12345
+pgfault 100000
+pgmajfault 200
+pswpin 10
+pswpout 20
+pgsteal_kswapd 0

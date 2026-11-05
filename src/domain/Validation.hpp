@@ -10,7 +10,7 @@ namespace memtest {
 // Topes de software calculados una vez al iniciar (Arquitectura.md §10). La UI
 // los muestra y la validación los aplica; no son editables en el MVP.
 struct GuardrailLimits {
-    std::uint64_t max_memory_bytes = 0;  // min(1 GiB, 25% de RAM total)
+    std::uint64_t max_memory_bytes = 0;  // 50% de RAM total, sin tope absoluto
     int max_threads = 0;                 // min(8 x núcleos, 64)
     int max_wall_timeout_ms = 0;         // 120 s
     int min_cpu_seconds = 1;

@@ -10,10 +10,13 @@ Proyecto de la materia Sistemas Operativos. Interfaz construida con
 
 ## Estado
 
-**Base Linux integrada.** WP0 (contratos y esqueleto), WP1 (métricas y límites),
-WP2 (runtime y workloads) y WP4 (worker real, supervisor y controlador) ya están
-en `main`. La TUI usa el controlador real y lanza `mem-test-worker` como proceso
-hijo. La UI completa, el historial y la exportación CSV quedan para WP3. El
+**Aplicación Linux integrada.** WP0 (contratos y esqueleto), WP1 (métricas y
+límites), WP2 (runtime y workloads), WP3 (UI, historial y CSV) y WP4 (worker
+real, supervisor y controlador) están en `main`. La TUI usa el controlador real,
+lanza `mem-test-worker` como proceso hijo y mantiene un monitor del sistema en
+vivo: CPU, RAM, SWAP, load, fallos de página y cambios de contexto, incluso
+cuando no hay una ejecución. Las cargas usan una duración real configurable y
+guardan el impacto del sistema en el historial, la comparación y el CSV. El
 soporte Windows quedó estacionado: el MVP compila solo en Linux.
 
 | Documento | Contenido |
@@ -82,11 +85,27 @@ límites, sin ejecutar la carga, se le pasa la misma configuración por `stdin`:
 ./build/mem-test-worker --probe < config.txt
 ```
 
-La exportación CSV está prevista para WP3; todavía no está disponible. Cuando
-se implemente, generará en `resultados/`:
+La exportación CSV (F8) genera en `resultados/`:
 
-- `resumen_YYYYMMDD-HHMMSS.csv`: una fila por ejecución.
-- `detalle_<run_id>.csv`: la serie temporal de la ejecución.
+- `resumen_YYYYMMDD-HHMMSS.csv`: una fila por ejecución, con configuración,
+  resultado e impacto sobre el sistema.
+- `detalle_<run_id>.csv`: la serie temporal de métricas del worker.
+
+La pantalla principal muestra siempre el monitor del sistema y dos gráficas:
+CPU total y una métrica seleccionable (RAM, SWAP, fallos por segundo o RSS de la
+carga). Los cuatro experimentos se eligen con tabs superiores en el formulario:
+**Concur.**, **CPU**, **Memoria** y **Compart.**. Al ejecutar una prueba, la
+duración es real: la carga corre ese tiempo, salvo que la corte un límite, el
+watchdog o el botón Detener.
+
+Para comparar dos corridas, elegí una fila del historial y pulsá **Comparar**,
+**Enter** (o doble clic) sobre la fila, o **F9**. Se abre una vista aparte dentro
+de la misma escena: a la izquierda queda la ficha de esa ejecución y a la derecha
+un selector compacto con las demás corridas; al elegir una, se muestra su ficha
+con los deltas respecto de la primera. Las fichas llevan una insignia `A`/`B`,
+el título se colorea según el resultado y el selector ocupa solo las filas que
+necesita, así la segunda ficha queda pegada debajo. `Esc` o el botón `Volver`
+regresan a la pantalla principal sin perder el formulario ni el historial.
 
 ## Pruebas
 
@@ -120,7 +139,7 @@ src/
   runtime/    Pools de hilos, cola de tareas, cancelación
   workload/   Concurrencia, CPU, memoria y contador compartido
   metrics/    Lectura y parseo de /proc
-  limits/     setrlimit y sondeo de capacidades
+  limits/     setrlimit, cgroup v2 y sondeo de capacidades
   process/    posix_spawn, pipes, señales y protocolo
   app/        Controlador, runner, historial y mocks
   ui/         Escenas, formularios, paneles y gráficas
@@ -135,7 +154,9 @@ docs/         Requerimientos, arquitectura y diagrama
 - Los guardrails limitan memoria, hilos, duración y cantidad de ejecuciones.
 - El worker se crea en un grupo de procesos propio y se limpia con
   `PR_SET_PDEATHSIG` y `SIGKILL` si no responde.
-- La aplicación no está diseñada para agotar la memoria del equipo: el tope por
-  defecto es el 25 % de la RAM, con un máximo de 1 GiB.
+- La aplicación deja libre la mitad de la RAM disponible (y nunca supera la
+  mitad de la RAM total) para el SO y la TUI.
+- La cuota de CPU usa cgroup v2 `cpu.max`; si el entorno no permite crear el
+  cgroup, la prueba se rechaza y se sugiere `RLIMIT_CPU`.
 - Si un límite no se puede aplicar, se informa como `NotApplied` o
   `Unsupported`; la ejecución no se presenta como limitada.

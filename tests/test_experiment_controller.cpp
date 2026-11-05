@@ -168,6 +168,62 @@ void exports_real_history(Context& context) {
     std::filesystem::remove_all(dir, remove_error);
 }
 
+void duration_is_real_and_system_is_sampled(Context& context) {
+    auto controller = make_controller();
+    ExperimentConfig config;
+    config.workload = WorkloadKind::Concurrency;
+    config.worker_mode = WorkerMode::NativeThreads;
+    config.threads = 2;
+    config.work_units = 0;
+    config.duration_ms = 600;
+    config.wall_timeout_ms = 2600;
+
+    std::string error;
+    CHECK(context, controller->start(config, &error));
+    CHECK(context, error.empty());
+    CHECK(context, wait_done(*controller, 5000ms));
+
+    const auto results = controller->take_results();
+    CHECK_EQ(context, results.size(), std::size_t{1});
+    if (!results.empty()) {
+        const ExperimentResult& result = results.front();
+        CHECK_EQ(context, result.outcome, RunOutcome::Completed);
+        CHECK(context, result.duration.count() >= 400);
+        CHECK(context, result.duration.count() < 3000);
+        CHECK(context, !result.series.empty());
+        CHECK(context, result.system_baseline.mem_total > 0);
+        CHECK(context, result.system_peak.mem_total > 0);
+        CHECK(context, result.system_cpu_peak_percent >= 0.0);
+    }
+}
+
+void memory_limit_hit_is_reachable(Context& context) {
+    auto controller = make_controller();
+    ExperimentConfig config;
+    config.workload = WorkloadKind::MemoryPressure;
+    config.memory_bytes = 64ull * 1024ull * 1024ull;
+    config.page_stride_bytes = 4096;
+    config.memory_limit_kind = MemoryLimitKind::AddressSpace;
+    config.memory_limit_bytes = 32ull * 1024ull * 1024ull;
+    config.duration_ms = 500;
+    config.wall_timeout_ms = 2500;
+
+    std::string error;
+    CHECK(context, controller->start(config, &error));
+    CHECK(context, error.empty());
+    CHECK(context, wait_done(*controller, 5000ms));
+
+    const auto results = controller->take_results();
+    CHECK_EQ(context, results.size(), std::size_t{1});
+    if (!results.empty()) {
+        const ExperimentResult& result = results.front();
+        if (result.limits.memory_status == LimitStatus::Applied) {
+            CHECK_EQ(context, result.outcome, RunOutcome::MemoryLimitHit);
+        }
+        CHECK(context, result.system_baseline.mem_total > 0);
+    }
+}
+
 void rejects_invalid_config(Context& context) {
     auto controller = make_controller();
     ExperimentConfig config;
@@ -188,6 +244,8 @@ Suite experiment_controller_suite() {
         {"stop cooperativo", stop_is_cooperative},
         {"rechaza segundo start", rejects_second_start},
         {"exporta historial real", exports_real_history},
+        {"duracion real y sistema muestreado", duration_is_real_and_system_is_sampled},
+        {"limite de memoria alcanzable", memory_limit_hit_is_reachable},
         {"rechaza configuracion invalida", rejects_invalid_config},
     };
 }

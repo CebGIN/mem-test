@@ -10,24 +10,14 @@
 namespace memtest::ui {
 namespace {
 
+using guayaba::Button;
 using guayaba::Control;
+using guayaba::HBox;
 using guayaba::Label;
 using guayaba::ListView;
 using guayaba::NodeRef;
 using guayaba::PanelContainer;
 using guayaba::VBox;
-
-const char* color_for(RunOutcome outcome) {
-    switch (outcome) {
-        case RunOutcome::Completed: return guayaba::Color::GREEN;
-        case RunOutcome::Stopped: return guayaba::Color::CYAN;
-        case RunOutcome::MemoryLimitHit:
-        case RunOutcome::CpuLimitHit: return guayaba::Color::YELLOW;
-        case RunOutcome::ExternalKill:
-        case RunOutcome::Error: return guayaba::Color::RED;
-    }
-    return guayaba::Color::WHITE;
-}
 
 }  // namespace
 
@@ -50,6 +40,15 @@ HistoryPanel HistoryPanel::build(const NodeRef<Control>& parent) {
     panel.list_->set_custom_minimum_size({0, 1});
     style_list(panel.list_);
 
+    // Acción principal del panel: abrir la vista de comparación A/B con la
+    // fila seleccionada.
+    NodeRef<HBox> actions = add_filling_row(box, "history_actions", 0);
+    actions->set_content_alignment(guayaba::ContentAlignment::Begin);
+    panel.compare_ = actions->add_child<Button>("history_compare");
+    panel.compare_->set_text("Comparar");
+    panel.compare_->set_disabled(true);
+    style_button(panel.compare_);
+
     return panel;
 }
 
@@ -63,7 +62,8 @@ void HistoryPanel::set_results(const std::vector<ExperimentResult>& results) {
     list_->clear_item_colors();
     for (std::size_t index = 0; index < results.size(); ++index) {
         list_->set_item_color(static_cast<int>(index),
-                              guayaba::Color::from_name(color_for(results[index].outcome)));
+                              guayaba::Color::from_name(
+                                  outcome_color(results[index].outcome)));
     }
     list_->set_items(std::move(rows));
     list_->set_visible(!results.empty());
@@ -79,6 +79,10 @@ void HistoryPanel::set_results(const std::vector<ExperimentResult>& results) {
 
 int HistoryPanel::selected_index() const {
     return list_->selected();
+}
+
+void HistoryPanel::select_index(int index) {
+    list_->set_selected(index);
 }
 
 void HistoryPanel::select_last() {

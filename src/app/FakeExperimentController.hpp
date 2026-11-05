@@ -33,7 +33,7 @@ public:
     ValidationReport validate(const ExperimentConfig& config) const override;
     bool start(const ExperimentConfig& config, std::string* error) override;
     void stop() override;
-    LiveState live() const override;
+    LiveState live() override;
     std::vector<ExperimentResult> take_results() override;
     std::vector<ExperimentResult> history() const override;
     bool export_csv(const std::filesystem::path& dir, std::string* error) override;
@@ -43,6 +43,7 @@ private:
     bool wait_for(std::chrono::milliseconds period);
     MetricsSnapshot make_sample(const ExperimentConfig& config, std::size_t index,
                                 std::size_t samples) const;
+    SystemSnapshot make_system_sample(bool running);
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;
@@ -54,6 +55,7 @@ private:
     GuardrailLimits limits_;
     std::uint64_t next_run_number_ = 1;
     std::uint64_t running_run_ = 0;  // 0 = no hay ejecución en curso
+    std::uint64_t system_tick_ = 0;
     bool stop_requested_ = false;
 };
 

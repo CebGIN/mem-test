@@ -1,6 +1,7 @@
 #ifndef MEMTEST_APP_EXPERIMENTCONTROLLER_HPP
 #define MEMTEST_APP_EXPERIMENTCONTROLLER_HPP
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -33,7 +34,7 @@ public:
     ValidationReport validate(const ExperimentConfig& config) const override;
     bool start(const ExperimentConfig& config, std::string* error) override;
     void stop() override;
-    LiveState live() const override;
+    LiveState live() override;
     std::vector<ExperimentResult> take_results() override;
     std::vector<ExperimentResult> history() const override;
     bool export_csv(const std::filesystem::path& dir,
@@ -41,6 +42,8 @@ public:
 
 private:
     void run(ExperimentConfig config);
+    void sample_system_locked(bool force = false);
+    void update_system_impact_locked(ExperimentResult& result);
 
     std::unique_ptr<IMetricsSource> metrics_;
     std::unique_ptr<IProcessSupervisor> supervisor_;
@@ -55,6 +58,13 @@ private:
     GuardrailLimits limits_;
     bool running_ = false;
     bool stop_requested_ = false;
+
+    // Muestreo global del sistema. La UI llama a live() por frame; se toma una
+    // muestra nueva cada 500 ms y se guarda una serie para las gráficas.
+    std::chrono::steady_clock::time_point last_system_sample_{};
+    bool system_sampled_ = false;
+    std::chrono::steady_clock::time_point monitor_start_{};
+    std::vector<SystemSnapshot> run_system_samples_;
 };
 
 }  // namespace memtest

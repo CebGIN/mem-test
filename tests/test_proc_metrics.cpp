@@ -4,8 +4,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 
 #include "TestHarness.hpp"
 #include "metrics/MetricsSourceFactory.hpp"
@@ -192,6 +194,53 @@ void test_system_info_on_linux() {
     CHECK(info.cores >= 1);
 }
 
+void test_parse_global_stat_and_vmstat() {
+    GlobalStat global;
+    CHECK(parse_global_stat(fixture("proc-stat-global.txt"), global));
+    CHECK_EQ(global.cpu_user, 1000u);
+    CHECK_EQ(global.cpu_nice, 100u);
+    CHECK_EQ(global.cpu_system, 500u);
+    CHECK_EQ(global.cpu_idle, 8000u);
+    CHECK_EQ(global.cpu_iowait, 200u);
+    CHECK_EQ(global.ctxt, 123456u);
+    CHECK_EQ(global.processes, 9876u);
+    CHECK_EQ(global.procs_running, 3u);
+    CHECK_EQ(global.procs_blocked, 1u);
+
+    VmStat vm;
+    CHECK(parse_vmstat(fixture("proc-vmstat.txt"), vm));
+    CHECK_EQ(vm.pgfault, 100000u);
+    CHECK_EQ(vm.pgmajfault, 200u);
+    CHECK_EQ(vm.pswpin, 10u);
+    CHECK_EQ(vm.pswpout, 20u);
+
+    double load_1m = 0.0;
+    double load_5m = 0.0;
+    double load_15m = 0.0;
+    CHECK(parse_load_averages(fixture("proc-loadavg.txt"), load_1m, load_5m,
+                              load_15m));
+    CHECK(load_1m > 0.51 && load_1m < 0.53);
+    CHECK(load_5m > 0.47 && load_5m < 0.49);
+    CHECK(load_15m > 0.39 && load_15m < 0.41);
+}
+
+void test_sample_system_linux() {
+    auto source = make_metrics_source();
+    SystemSnapshot first;
+    CHECK(source->sample_system(first));
+    CHECK(first.mem_total > 0);
+    CHECK(first.mem_used <= first.mem_total);
+    CHECK(first.mem_available <= first.mem_total);
+    CHECK(first.swap_used <= first.swap_total);
+    CHECK(first.cpu_total_percent >= 0.0 && first.cpu_total_percent <= 100.0);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    SystemSnapshot second;
+    CHECK(source->sample_system(second));
+    CHECK(second.cpu_total_percent >= 0.0 && second.cpu_total_percent <= 100.0);
+    CHECK(second.elapsed >= first.elapsed);
+}
+
 }  // namespace
 
 int main() {
@@ -203,5 +252,7 @@ int main() {
     test_parse_meminfo_and_loadavg();
     test_child_allocating_64_mib();
     test_system_info_on_linux();
+    test_parse_global_stat_and_vmstat();
+    test_sample_system_linux();
     return TEST_RESULT();
 }
