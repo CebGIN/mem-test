@@ -153,6 +153,11 @@ ExperimentResult ExperimentRunner::run(const ExperimentConfig& config,
         return result;
     }
 
+    const int watchdog_ms =
+        config.duration_ms > 0
+            ? std::min(120 * 1000, config.duration_ms + 2000)
+            : config.wall_timeout_ms;
+
     const auto started = Clock::now();
     auto next_sample = started;
     auto stop_at = started;
@@ -181,6 +186,13 @@ ExperimentResult ExperimentRunner::run(const ExperimentConfig& config,
                 }
                 if (const auto observed = u64_field(event, "observed")) {
                     result.observed_value = *observed;
+                }
+                if (const auto throttled = u64_field(event, "nr_throttled")) {
+                    result.limits.nr_throttled = *throttled;
+                }
+                if (const auto throttled_usec =
+                        u64_field(event, "throttled_usec")) {
+                    result.limits.throttled_usec = *throttled_usec;
                 }
                 if (const std::string* detail = field(event, "detail")) {
                     result.detail = *detail;
@@ -231,7 +243,7 @@ ExperimentResult ExperimentRunner::run(const ExperimentConfig& config,
             next_sample = now + std::chrono::milliseconds(250);
         }
 
-        if (!stop_sent && elapsed.count() >= config.wall_timeout_ms) {
+        if (!stop_sent && elapsed.count() >= watchdog_ms) {
             timed_out = true;
             stop_sent = true;
             stop_at = now;

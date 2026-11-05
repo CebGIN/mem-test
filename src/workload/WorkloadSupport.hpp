@@ -1,6 +1,8 @@
 #ifndef MEMTEST_WORKLOAD_WORKLOADSUPPORT_HPP
 #define MEMTEST_WORKLOAD_WORKLOADSUPPORT_HPP
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -44,6 +46,21 @@ inline bool workload_cancelled(const WorkloadContext& context,
                                const CancellationToken& token) {
     return token.cancelled() ||
            (context.cancel != nullptr && context.cancel->cancelled());
+}
+
+inline bool workload_uses_duration(const ExperimentConfig& config) {
+    return config.duration_ms > 0;
+}
+
+inline std::chrono::steady_clock::time_point workload_deadline(
+    const ExperimentConfig& config) {
+    return std::chrono::steady_clock::now() +
+           std::chrono::milliseconds(std::max(0, config.duration_ms));
+}
+
+inline bool workload_time_expired(
+    const std::chrono::steady_clock::time_point& deadline) {
+    return std::chrono::steady_clock::now() >= deadline;
 }
 
 // Reporte de progreso seguro entre tareas. El callback puede ser costoso; los

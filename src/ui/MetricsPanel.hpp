@@ -7,8 +7,9 @@
 
 namespace memtest::ui {
 
-// Panel de métricas en vivo: etiquetas con unidades y una gráfica sobre
-// LiveState.recent. No conoce métricas/ ni process/: solo el contrato de app/.
+// Panel de sistema en vivo. Muestra métricas globales (CPU, RAM, SWAP, load,
+// fallos y context switches) y, debajo, las métricas del worker de la carga
+// actual. No conoce metrics/ ni process/: solo el contrato de app/.
 class MetricsPanel {
 public:
     static MetricsPanel build(const guayaba::NodeRef<guayaba::Control>& parent);
@@ -16,10 +17,10 @@ public:
     void refresh(const LiveState& live);
 
 private:
-    guayaba::NodeRef<guayaba::Label> values_;
-    guayaba::NodeRef<guayaba::Label> hint_;
-    guayaba::NodeRef<guayaba::Label> graph_empty_;
-    guayaba::NodeRef<guayaba::Graph> graph_;
+    guayaba::NodeRef<guayaba::Label> system_values_;
+    guayaba::NodeRef<guayaba::Label> worker_values_;
+    guayaba::NodeRef<guayaba::Graph> graph_;      // CPU del sistema
+    guayaba::NodeRef<guayaba::Graph> mem_graph_;  // métrica seleccionable
     guayaba::NodeRef<guayaba::ListView> metric_;
 };
 

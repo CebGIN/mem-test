@@ -61,6 +61,14 @@ std::string worker_mode_name(WorkerMode mode) {
     return "Unknown";
 }
 
+std::string load_mode_name(LoadMode mode) {
+    switch (mode) {
+        case LoadMode::Duration: return "Duration";
+        case LoadMode::TotalWork: return "TotalWork";
+    }
+    return "Unknown";
+}
+
 std::string sync_mode_name(SyncMode mode) {
     switch (mode) {
         case SyncMode::None: return "None";
@@ -158,12 +166,18 @@ bool write_summary(const std::vector<ExperimentResult>& results,
         return false;
     }
 
-    out << "run_id,timestamp,workload,worker_mode,sync_mode,threads,work_units,"
-           "increments,memory_bytes,page_stride,memory_limit_kind,memory_limit_bytes,"
-           "cpu_seconds,cpu_quota,outcome,duration_ms,vm_size_peak,vm_rss_peak,vm_hwm,"
+    out << "run_id,timestamp,workload,worker_mode,load_mode,sync_mode,threads,"
+           "work_units,increments,memory_bytes,page_stride,force_swap,"
+           "memory_limit_kind,memory_limit_bytes,cpu_seconds,cpu_quota,"
+           "limit_cpu_quota_status,nr_throttled,throttled_usec,"
+           "outcome,duration_ms,vm_size_peak,vm_rss_peak,vm_hwm,"
            "vm_swap_peak,minor_faults,major_faults,cpu_user_s,cpu_sys_s,threads_peak,"
            "voluntary_ctxt,involuntary_ctxt,expected,observed,limit_memory_status,"
-           "limit_cpu_status,detail\n";
+           "limit_cpu_status,detail,run_duration_ms,sys_mem_total,sys_mem_used_base,"
+           "sys_mem_used_peak,sys_mem_used_last,sys_swap_total,sys_swap_used_base,"
+           "sys_swap_used_peak,sys_swap_used_last,sys_cpu_peak_pct,sys_load1_peak,"
+           "sys_minor_faults_delta,sys_major_faults_delta,sys_ram_delta,"
+           "sys_swap_delta\n";
 
     const std::string timestamp = export_timestamp();
     for (const ExperimentResult& result : results) {
@@ -172,16 +186,21 @@ bool write_summary(const std::vector<ExperimentResult>& results,
             .add(timestamp)
             .add(workload_name(result.config.workload))
             .add(worker_mode_name(result.config.worker_mode))
+            .add(load_mode_name(result.config.load_mode))
             .add(sync_mode_name(result.config.sync_mode))
             .add(result.config.threads)
             .add(result.config.work_units)
             .add(result.config.increments_per_thread)
             .add(result.config.memory_bytes)
             .add(result.config.page_stride_bytes)
+            .add(result.config.force_swap ? 1 : 0)
             .add(memory_kind_name(result.config.memory_limit_kind))
             .add(result.config.memory_limit_bytes)
             .add(optional_int(result.config.cpu_limit.seconds))
             .add(optional_int(result.config.cpu_limit.quota_percent))
+            .add(limit_status_name(result.limits.cpu_quota_status))
+            .add(result.limits.nr_throttled)
+            .add(result.limits.throttled_usec)
             .add(outcome_name(result.outcome))
             .add(std::to_string(result.duration.count()))
             .add(result.peak.vm_size)
@@ -199,7 +218,22 @@ bool write_summary(const std::vector<ExperimentResult>& results,
             .add(result.observed_value)
             .add(limit_status_name(result.limits.memory_status))
             .add(limit_status_name(result.limits.cpu_seconds_status))
-            .add(result.detail);
+            .add(result.detail)
+            .add(result.config.duration_ms)
+            .add(result.system_baseline.mem_total)
+            .add(result.system_baseline.mem_used)
+            .add(result.system_peak.mem_used)
+            .add(result.system_last.mem_used)
+            .add(result.system_baseline.swap_total)
+            .add(result.system_baseline.swap_used)
+            .add(result.system_peak.swap_used)
+            .add(result.system_last.swap_used)
+            .add(number(result.system_cpu_peak_percent, 1))
+            .add(number(result.system_peak.load_1m, 2))
+            .add(result.system_minor_faults_delta)
+            .add(result.system_major_faults_delta)
+            .add(result.system_ram_delta)
+            .add(result.system_swap_delta);
         out << row.str() << '\n';
     }
 

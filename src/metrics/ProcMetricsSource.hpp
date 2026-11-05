@@ -4,10 +4,13 @@
 // Fuente de métricas para Linux: combina /proc/<pid>/status, /proc/<pid>/stat,
 // /proc/meminfo y /proc/loadavg.
 
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <string>
 
 #include "metrics/IMetricsSource.hpp"
+#include "metrics/ProcFs.hpp"
 
 namespace memtest::metrics {
 
@@ -41,7 +44,19 @@ bool read_proc_status(pid_t pid, ProcStatus& out);
 class ProcMetricsSource final : public IMetricsSource {
 public:
     bool sample(pid_t pid, MetricsSnapshot& out) const override;
+    bool sample_system(SystemSnapshot& out) const override;
     SystemInfo system_info() const override;
+
+private:
+    // Estado de las diferencias entre muestras globales. `sample_system` puede
+    // llamarse desde el hilo de la UI mientras el runner muestrea al worker;
+    // el mutex protege solo estos contadores.
+    mutable std::mutex system_mutex_;
+    mutable bool system_primed_ = false;
+    mutable GlobalStat previous_global_;
+    mutable VmStat previous_vm_;
+    mutable std::chrono::steady_clock::time_point previous_sample_;
+    mutable std::chrono::steady_clock::time_point first_sample_;
 };
 
 }  // namespace memtest::metrics

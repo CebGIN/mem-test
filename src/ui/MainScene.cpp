@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <exception>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -10,7 +11,7 @@
 
 #include <guayaba/Guayaba.hpp>
 
-#include "ui/ComparePanel.hpp"
+#include "ui/CompareView.hpp"
 #include "ui/ExperimentForm.hpp"
 #include "ui/HistoryPanel.hpp"
 #include "ui/MetricsPanel.hpp"
@@ -21,6 +22,7 @@ namespace memtest::ui {
 namespace {
 
 using guayaba::Control;
+using guayaba::FocusManager;
 using guayaba::HBox;
 using guayaba::InputEvent;
 using guayaba::Key;
@@ -34,26 +36,26 @@ using guayaba::SplitOrientation;
 using guayaba::VBox;
 
 const char* kDefaultStatus =
-    "Listo. F5 inicia · F6 detiene · F7 repite · F8 exporta · Esc sale";
+    "Listo. F5 inicia · F6 detiene · F7 repite · F8 exporta · F9 compara · Esc sale";
 
 class MainSceneScript : public Script<guayaba::Node> {
 public:
     MainSceneScript(IExperimentController* controller, SystemInfo info,
-                    GuardrailLimits limits, std::filesystem::path export_dir,
-                    ExperimentForm form, MetricsPanel metrics,
-                    HistoryPanel history_panel, ComparePanel compare,
-                    NodeRef<Label> state, NodeRef<Label> guardrails,
+                    std::filesystem::path export_dir, ExperimentForm form,
+                    MetricsPanel metrics, HistoryPanel history_panel,
+                    CompareView compare, NodeRef<Control> main_page,
+                    NodeRef<Label> state, NodeRef<Label> system,
                     NodeRef<Label> status)
         : controller_(controller),
           info_(std::move(info)),
-          limits_(std::move(limits)),
           export_dir_(std::move(export_dir)),
           form_(std::move(form)),
           metrics_(std::move(metrics)),
           history_panel_(std::move(history_panel)),
           compare_(std::move(compare)),
+          main_page_(main_page),
           state_label_(state),
-          guardrails_label_(guardrails),
+          system_label_(system),
           status_label_(status) {}
 
     void on_attached() override {
@@ -65,6 +67,25 @@ public:
             "clicked", this, &MainSceneScript::repeat_selected);
         form_.export_button()->connect_script_signal(
             "clicked", this, &MainSceneScript::export_history);
+        form_.workload_button(0)->connect_script_signal(
+            "clicked", this, &MainSceneScript::select_concurrency);
+        form_.workload_button(1)->connect_script_signal(
+            "clicked", this, &MainSceneScript::select_cpu_limit);
+        form_.workload_button(2)->connect_script_signal(
+            "clicked", this, &MainSceneScript::select_memory_pressure);
+        form_.workload_button(3)->connect_script_signal(
+            "clicked", this, &MainSceneScript::select_shared_counter);
+
+        history_panel_.compare_button()->connect_script_signal(
+            "clicked", this, &MainSceneScript::compare_selected);
+        history_panel_.list()->connect_script_signal(
+            "item_activated", this, &MainSceneScript::open_compare_at);
+        compare_.back_button()->connect_script_signal(
+            "clicked", this, &MainSceneScript::close_compare);
+        compare_.repeat_button()->connect_script_signal(
+            "clicked", this, &MainSceneScript::repeat_primary);
+        compare_.list()->connect_script_signal(
+            "selection_changed", this, &MainSceneScript::secondary_changed);
     }
 
     void on_enter_tree() override {
@@ -105,6 +126,23 @@ public:
         if (event.type != InputEvent::Type::KEY || !event.pressed) {
             return;
         }
+
+        // En la vista de comparación solo Esc vuelve y F8 exporta. Lanzar o
+        // repetir desde acá queda deshabilitado a propósito.
+        if (compare_visible_) {
+            switch (event.key) {
+                case Key::ESCAPE:
+                    close_compare();
+                    break;
+                case Key::F8:
+                    export_history();
+                    break;
+                default:
+                    break;
+            }
+            return;
+        }
+
         switch (event.key) {
             case Key::F5:
                 start_run();
@@ -118,6 +156,9 @@ public:
             case Key::F8:
                 export_history();
                 break;
+            case Key::F9:
+                compare_selected();
+                break;
             case Key::ESCAPE:
             case Key::Q:
                 SceneManager::get_instance().stop_running();
@@ -128,6 +169,27 @@ public:
     }
 
 private:
+    void select_workload(WorkloadKind kind) {
+        form_.set_workload(kind);
+        clear_notice();
+    }
+
+    void select_concurrency() {
+        select_workload(WorkloadKind::Concurrency);
+    }
+
+    void select_cpu_limit() {
+        select_workload(WorkloadKind::CpuLimit);
+    }
+
+    void select_memory_pressure() {
+        select_workload(WorkloadKind::MemoryPressure);
+    }
+
+    void select_shared_counter() {
+        select_workload(WorkloadKind::SharedCounter);
+    }
+
     void start_run() {
         if (controller_ == nullptr) {
             return;
@@ -190,6 +252,84 @@ private:
         }
     }
 
+    void compare_selected() {
+        open_compare_at(history_panel_.selected_index());
+    }
+
+    void open_compare_at(int index) {
+        if (index < 0 || static_cast<std::size_t>(index) >= history_.size()) {
+            set_notice("Elegí una ejecución del historial para comparar.", true);
+            return;
+        }
+        try {
+            compare_primary_id_ = history_[static_cast<std::size_t>(index)].run_id;
+            syncing_compare_ = true;
+            compare_.set_results(history_, compare_primary_id_);
+            syncing_compare_ = false;
+
+            main_page_->set_visible(false);
+            compare_.page()->set_visible(true);
+            compare_visible_ = true;
+            if (compare_.list()->is_visible()) {
+                compare_.list()->grab_focus();
+            }
+            clear_notice();
+            refresh_ui();
+        } catch (const std::exception& exception) {
+            syncing_compare_ = false;
+            set_notice(std::string("Error al comparar: ") + exception.what(), true);
+        } catch (...) {
+            syncing_compare_ = false;
+            set_notice("Error desconocido al comparar.", true);
+        }
+    }
+
+    void close_compare() {
+        if (!compare_visible_) {
+            return;
+        }
+        compare_visible_ = false;
+        compare_.page()->set_visible(false);
+        main_page_->set_visible(true);
+        FocusManager::get_instance().clear();
+
+        const int index = index_of_run(compare_primary_id_);
+        if (index >= 0) {
+            history_panel_.select_index(index);
+        }
+        compare_primary_id_.clear();
+        refresh_ui();
+    }
+
+    void secondary_changed(int index) {
+        if (!compare_visible_ || syncing_compare_) {
+            return;
+        }
+        compare_.select_secondary(index);
+        refresh_ui();
+    }
+
+    void repeat_primary() {
+        if (controller_ == nullptr) {
+            return;
+        }
+        const ExperimentResult* run = compare_.primary();
+        if (run == nullptr) {
+            return;
+        }
+        const ExperimentConfig config = run->config;
+        close_compare();
+        try {
+            form_.write(config);
+            draft_ = config;
+            start_run();
+        } catch (const std::exception& exception) {
+            set_notice(std::string("Error al repetir: ") + exception.what(), true);
+        } catch (...) {
+            set_notice("Error desconocido al repetir.", true);
+        }
+    }
+
     void export_history() {
         if (controller_ == nullptr) {
             return;
@@ -234,7 +374,11 @@ private:
 
     void refresh_panels() {
         history_panel_.set_results(history_);
-        compare_.set_results(history_);
+        if (compare_visible_) {
+            syncing_compare_ = true;
+            compare_.set_results(history_, compare_primary_id_);
+            syncing_compare_ = false;
+        }
     }
 
     void refresh_ui() {
@@ -243,7 +387,6 @@ private:
         const ValidationReport report = controller_->validate(draft_);
         form_.refresh(draft_, report);
         metrics_.refresh(live);
-        compare_.refresh();
 
         const bool running =
             live.state != RunState::Idle && live.state != RunState::Done;
@@ -253,12 +396,13 @@ private:
         form_.stop_button()->set_disabled(!running);
         form_.repeat_button()->set_disabled(running || !has_selection);
         form_.export_button()->set_disabled(history_.empty());
+        history_panel_.compare_button()->set_disabled(!has_selection);
 
         if (Label* label = state_label_.get()) {
             label->set_text("Estado: " + state_text(live.state));
         }
-        if (Label* label = guardrails_label_.get()) {
-            label->set_text(guardrails_text());
+        if (Label* label = system_label_.get()) {
+            label->set_text(system_summary_text(live));
         }
 
         std::string status;
@@ -266,6 +410,12 @@ private:
         if (!notice_.empty()) {
             status = notice_;
             error = notice_is_error_;
+        } else if (compare_visible_) {
+            status = "Comparación " + compare_primary_id_;
+            const std::string second = compare_.secondary_id();
+            status += second.empty() ? " · sin segunda ejecución"
+                                     : " vs " + second;
+            status += " · Esc vuelve · ↑↓ elige";
         } else if (!live.message.empty()) {
             status = live.message;
             if (live.state == RunState::Done && !history_.empty()) {
@@ -281,13 +431,34 @@ private:
         }
     }
 
-    std::string guardrails_text() const {
+    std::string system_summary_text(const LiveState& live) const {
+        if (live.system.mem_total == 0) {
+            std::ostringstream out;
+            out << "Sistema: " << std::max(1, info_.cores)
+                << " núcleos · midiendo...";
+            return out.str();
+        }
         std::ostringstream out;
-        out << "RAM " << gib(info_.total_ram) << " · " << std::max(1, info_.cores)
-            << " núcleos · " << std::max(1, limits_.max_threads) << " hilos · "
-            << std::max(1, limits_.max_wall_timeout_ms) / 1000 << " s · "
-            << history_.size() << " ej.";
+        out << "CPU " << std::fixed << std::setprecision(0)
+            << live.system.cpu_total_percent << "% · RAM "
+            << gib(live.system.mem_used) << "/" << gib(live.system.mem_total)
+            << " · ";
+        if (live.system.swap_available) {
+            out << "SWAP " << gib(live.system.swap_used) << "/"
+                << gib(live.system.swap_total);
+        } else {
+            out << "SWAP no disponible";
+        }
         return out.str();
+    }
+
+    int index_of_run(const std::string& run_id) const {
+        for (std::size_t index = 0; index < history_.size(); ++index) {
+            if (history_[index].run_id == run_id) {
+                return static_cast<int>(index);
+            }
+        }
+        return -1;
     }
 
     void set_notice(std::string message, bool error) {
@@ -302,22 +473,25 @@ private:
 
     IExperimentController* controller_ = nullptr;
     SystemInfo info_;
-    GuardrailLimits limits_;
     std::filesystem::path export_dir_;
 
     ExperimentForm form_;
     MetricsPanel metrics_;
     HistoryPanel history_panel_;
-    ComparePanel compare_;
+    CompareView compare_;
+    NodeRef<Control> main_page_;
 
     NodeRef<Label> state_label_;
-    NodeRef<Label> guardrails_label_;
+    NodeRef<Label> system_label_;
     NodeRef<Label> status_label_;
 
     ExperimentConfig draft_;
     std::vector<ExperimentResult> history_;
     std::string notice_;
     bool notice_is_error_ = false;
+    bool compare_visible_ = false;
+    bool syncing_compare_ = false;
+    std::string compare_primary_id_;
 };
 
 }  // namespace
@@ -352,22 +526,35 @@ std::unique_ptr<guayaba::Node> build_main_scene(
 
     NodeRef<Label> state =
         add_fixed_label(header, "state", "Estado: Inactivo");
-    NodeRef<Label> guardrails = add_reserved_label(header, "guardrails", "", 1);
+    NodeRef<Label> system =
+        add_reserved_label(header, "system", "Sistema: midiendo...", 1);
 
-    // --- Cuerpo -------------------------------------------------------------
-    NodeRef<SplitContainer> body = layout->add_child<SplitContainer>("body");
-    body->set_orientation(SplitOrientation::VerticalDivider);
-    body->set_split_ratio(0.45f);
-    body->set_min_first(32);
-    body->set_min_second(34);
+    // --- Páginas ------------------------------------------------------------
+    // `body` es el contenedor que alterna entre la pantalla principal y la
+    // vista de comparación. Ambas comparten cabecera y barra de estado.
+    NodeRef<Control> body = layout->add_child<Control>("body");
     body->set_anchor_preset(guayaba::AnchorPreset::FullRect);
 
-    ExperimentForm form = ExperimentForm::build(body, limits, ExperimentConfig{});
+    NodeRef<SplitContainer> main_page =
+        body->add_child<SplitContainer>("main_page");
+    main_page->set_orientation(SplitOrientation::VerticalDivider);
+    main_page->set_split_ratio(0.45f);
+    main_page->set_min_first(32);
+    main_page->set_min_second(34);
+    main_page->set_anchor_preset(guayaba::AnchorPreset::FullRect);
 
-    NodeRef<VBox> right = add_filling_box(body, "right", 1);
+    // La prueba de Concurrencia compara con un trabajo total fijo; este es el
+    // valor inicial que ve el usuario al abrir la aplicación.
+    ExperimentConfig initial;
+    initial.work_units = 100000000ull;
+    ExperimentForm form =
+        ExperimentForm::build(main_page, limits, initial);
+
+    NodeRef<VBox> right = add_filling_box(main_page, "right", 1);
     MetricsPanel metrics = MetricsPanel::build(right);
     HistoryPanel history_panel = HistoryPanel::build(right);
-    ComparePanel compare = ComparePanel::build(right);
+
+    CompareView compare = CompareView::build(body);
 
     // --- Barra de estado ----------------------------------------------------
     NodeRef<Label> status =
@@ -375,9 +562,9 @@ std::unique_ptr<guayaba::Node> build_main_scene(
     status->set_text_color("WHITE");
 
     root->attach_script<MainSceneScript>(
-        &controller, info, limits, std::move(export_dir), std::move(form),
-        std::move(metrics), std::move(history_panel), std::move(compare), state,
-        guardrails, status);
+        &controller, info, std::move(export_dir), std::move(form),
+        std::move(metrics), std::move(history_panel), std::move(compare),
+        main_page, state, system, status);
 
     return root;
 }

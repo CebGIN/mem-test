@@ -1,10 +1,13 @@
 #include "app/ExperimentController.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <exception>
 #include <utility>
 
 #include "app/ExperimentRunner.hpp"
 #include "core/CsvExporter.hpp"
+#include "limits/CgroupCpuQuota.hpp"
 #include "metrics/IMetricsSource.hpp"
 #include "process/IProcessSupervisor.hpp"
 
@@ -29,6 +32,7 @@ ExperimentController::ExperimentController(
     }
     system_ = info;
     limits_ = guardrails_from(system_);
+    monitor_start_ = std::chrono::steady_clock::now();
 }
 
 ExperimentController::~ExperimentController() {
@@ -77,6 +81,20 @@ bool ExperimentController::start(const ExperimentConfig& config,
         return false;
     }
 
+    if (config.cpu_limit.quota_percent.has_value()) {
+        std::string quota_detail;
+        if (!limits::CgroupCpuQuota::supported(&quota_detail)) {
+            if (error != nullptr) {
+                *error = "Cuota de CPU no soportada en este entorno; usá "
+                         "RLIMIT_CPU.";
+                if (!quota_detail.empty()) {
+                    *error += " " + quota_detail;
+                }
+            }
+            return false;
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (running_) {
@@ -88,9 +106,21 @@ bool ExperimentController::start(const ExperimentConfig& config,
 
         token_ = std::make_unique<CancellationToken>();
         stop_requested_ = false;
-        live_ = LiveState{};
         live_.state = RunState::Starting;
         live_.message = "Preparando ejecución";
+        live_.last = MetricsSnapshot{};
+        live_.recent.clear();
+        live_.system_baseline = SystemSnapshot{};
+        live_.system_peak = SystemSnapshot{};
+        live_.has_system_baseline = false;
+        run_system_samples_.clear();
+        // La línea base previa al spawn sirve de respaldo; en READY se
+        // reemplaza por una muestra sin el costo de arranque del worker.
+        sample_system_locked(true);
+        if (!live_.system_recent.empty()) {
+            live_.system_baseline = live_.system;
+            live_.has_system_baseline = true;
+        }
 
         try {
             running_ = true;
@@ -121,9 +151,97 @@ void ExperimentController::stop() {
     live_.message = "Deteniendo ejecución";
 }
 
-LiveState ExperimentController::live() const {
+LiveState ExperimentController::live() {
     std::lock_guard<std::mutex> lock(mutex_);
+    sample_system_locked();
     return live_;
+}
+
+void ExperimentController::sample_system_locked(bool force) {
+    if (!metrics_) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (!force && system_sampled_ &&
+        now - last_system_sample_ < std::chrono::milliseconds(500)) {
+        return;
+    }
+
+    SystemSnapshot snapshot;
+    if (!metrics_->sample_system(snapshot)) {
+        return;
+    }
+    snapshot.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - monitor_start_);
+
+    live_.system = snapshot;
+    live_.system_recent.push_back(snapshot);
+    if (live_.system_recent.size() > 240) {
+        live_.system_recent.erase(live_.system_recent.begin());
+    }
+    if (running_) {
+        run_system_samples_.push_back(snapshot);
+    }
+    last_system_sample_ = now;
+    system_sampled_ = true;
+}
+
+void ExperimentController::update_system_impact_locked(ExperimentResult& result) {
+    SystemSnapshot baseline;
+    if (live_.has_system_baseline) {
+        baseline = live_.system_baseline;
+    } else if (!run_system_samples_.empty()) {
+        baseline = run_system_samples_.front();
+    } else {
+        baseline = live_.system;
+    }
+
+    SystemSnapshot peak = baseline;
+    SystemSnapshot last = baseline;
+    for (const SystemSnapshot& sample : run_system_samples_) {
+        peak.mem_used = std::max(peak.mem_used, sample.mem_used);
+        peak.swap_used = std::max(peak.swap_used, sample.swap_used);
+        peak.swap_free = sample.swap_free;
+        peak.cpu_total_percent =
+            std::max(peak.cpu_total_percent, sample.cpu_total_percent);
+        peak.load_1m = std::max(peak.load_1m, sample.load_1m);
+        peak.load_5m = std::max(peak.load_5m, sample.load_5m);
+        peak.load_15m = std::max(peak.load_15m, sample.load_15m);
+        peak.ctxt = std::max(peak.ctxt, sample.ctxt);
+        peak.ctxt_per_second =
+            std::max(peak.ctxt_per_second, sample.ctxt_per_second);
+        peak.minor_faults = std::max(peak.minor_faults, sample.minor_faults);
+        peak.major_faults = std::max(peak.major_faults, sample.major_faults);
+        peak.minor_faults_per_second = std::max(
+            peak.minor_faults_per_second, sample.minor_faults_per_second);
+        peak.major_faults_per_second = std::max(
+            peak.major_faults_per_second, sample.major_faults_per_second);
+        peak.swap_in = std::max(peak.swap_in, sample.swap_in);
+        peak.swap_out = std::max(peak.swap_out, sample.swap_out);
+        last = sample;
+    }
+
+    result.system_baseline = baseline;
+    result.system_peak = peak;
+    result.system_last = last;
+    result.system_ram_delta =
+        peak.mem_used > baseline.mem_used ? peak.mem_used - baseline.mem_used : 0;
+    result.system_swap_delta =
+        peak.swap_used > baseline.swap_used ? peak.swap_used - baseline.swap_used
+                                            : 0;
+    result.system_cpu_peak_percent = peak.cpu_total_percent;
+    result.system_minor_faults_delta =
+        peak.minor_faults > baseline.minor_faults
+            ? peak.minor_faults - baseline.minor_faults
+            : 0;
+    result.system_major_faults_delta =
+        peak.major_faults > baseline.major_faults
+            ? peak.major_faults - baseline.major_faults
+            : 0;
+
+    live_.system_baseline = baseline;
+    live_.system_peak = peak;
+    live_.has_system_baseline = true;
 }
 
 std::vector<ExperimentResult> ExperimentController::take_results() {
@@ -168,6 +286,24 @@ void ExperimentController::run(ExperimentConfig config) {
                 }
             },
             [this](const WorkerEvent& event) {
+                if (event.type == WorkerEvent::Type::Ready) {
+                    // Línea base del sistema sin el costo de arranque del worker.
+                    SystemSnapshot ready;
+                    if (metrics_ && metrics_->sample_system(ready)) {
+                        ready.elapsed =
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - monitor_start_);
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        live_.system = ready;
+                        live_.system_baseline = ready;
+                        live_.has_system_baseline = true;
+                        live_.message = "Ejecutando carga";
+                        if (running_) {
+                            run_system_samples_.push_back(ready);
+                        }
+                        return;
+                    }
+                }
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (event.type == WorkerEvent::Type::Ready) {
                     live_.message = "Ejecutando carga";
@@ -189,6 +325,7 @@ void ExperimentController::run(ExperimentConfig config) {
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    update_system_impact_locked(result);
     pending_.push_back(result);
     live_.state = RunState::Done;
     live_.last = result.last;

@@ -13,6 +13,8 @@ class IMetricsSource {
 public:
     virtual ~IMetricsSource() = default;
     virtual bool sample(pid_t pid, MetricsSnapshot& out) const = 0;
+    // Estado global del equipo. A diferencia de `sample`, no depende de un PID.
+    virtual bool sample_system(SystemSnapshot& out) const = 0;
     virtual SystemInfo system_info() const = 0;
 };
 
