@@ -9,9 +9,17 @@ namespace memtest::ui {
 
 inline void style_panel(const guayaba::NodeRef<guayaba::PanelContainer>& panel) {
     guayaba::StyleBox& box = panel->get_stylebox();
+    box.set_background_color("BLACK");
     box.set_border_width(1);
     box.set_border_style(guayaba::StyleBorder::ASCII);
-    box.set_border_color("white");
+    box.set_border_color("BRIGHT_BLACK");
+    box.set_content_margin(1, 0, 1, 0);
+}
+
+inline void style_list(const guayaba::NodeRef<guayaba::ListView>& list) {
+    list->set_text_color("WHITE");
+    list->set_selection_background_color("BLUE");
+    list->set_selection_text_color("BRIGHT_WHITE");
 }
 
 inline void style_button(const guayaba::NodeRef<guayaba::Button>& button) {

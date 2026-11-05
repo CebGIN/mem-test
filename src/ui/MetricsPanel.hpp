@@ -18,6 +18,7 @@ public:
 private:
     guayaba::NodeRef<guayaba::Label> values_;
     guayaba::NodeRef<guayaba::Label> hint_;
+    guayaba::NodeRef<guayaba::Label> graph_empty_;
     guayaba::NodeRef<guayaba::Graph> graph_;
     guayaba::NodeRef<guayaba::ListView> metric_;
 };

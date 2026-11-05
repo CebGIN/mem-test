@@ -26,6 +26,7 @@ using guayaba::InputEvent;
 using guayaba::Key;
 using guayaba::Label;
 using guayaba::NodeRef;
+using guayaba::PanelContainer;
 using guayaba::SceneManager;
 using guayaba::Script;
 using guayaba::SplitContainer;
@@ -275,7 +276,7 @@ private:
         }
 
         if (Label* label = status_label_.get()) {
-            label->set_text(status);
+            label->set_text(" " + status);
             label->set_text_color(error ? "BRIGHT_RED" : "WHITE");
         }
     }
@@ -331,13 +332,22 @@ std::unique_ptr<guayaba::Node> build_main_scene(
     screen->set_anchor_preset(guayaba::AnchorPreset::FullRect);
     screen->set_clip_children(true);
 
+    // Superficie opaca: el renderer limpia con un color de fondo propio; sin
+    // esto, los huecos entre paneles y la cabecera quedan con ese color.
+    NodeRef<PanelContainer> background =
+        screen->add_child<PanelContainer>("background");
+    background->set_anchor_preset(guayaba::AnchorPreset::FullRect);
+    background->get_stylebox().set_background_color("BLACK");
+
     NodeRef<VBox> layout = screen->add_child<VBox>("layout");
     layout->set_anchor_preset(guayaba::AnchorPreset::FullRect);
     layout->set_separation(1);
 
     // --- Cabecera -----------------------------------------------------------
-    NodeRef<HBox> header = add_filling_row(layout, "header", 2);
+    NodeRef<HBox> header = add_filling_row(layout, "header", 1);
     header->set_content_alignment(guayaba::ContentAlignment::Begin);
+    NodeRef<Label> header_pad = add_fixed_label(header, "header_pad", " ");
+    header_pad->set_custom_minimum_size({1, 1});
     add_fixed_label(header, "title", "mem-test");
 
     NodeRef<Label> state =

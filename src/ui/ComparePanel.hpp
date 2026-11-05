@@ -26,6 +26,7 @@ private:
     guayaba::NodeRef<guayaba::ListView> metric_;
     guayaba::NodeRef<guayaba::Graph> graph_;
     guayaba::NodeRef<guayaba::Label> table_;
+    guayaba::NodeRef<guayaba::Label> empty_;
 
     std::vector<ExperimentResult> results_;
     int last_parameter_ = -1;

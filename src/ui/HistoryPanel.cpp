@@ -11,7 +11,6 @@ namespace memtest::ui {
 namespace {
 
 using guayaba::Control;
-using guayaba::Grow;
 using guayaba::Label;
 using guayaba::ListView;
 using guayaba::NodeRef;
@@ -41,11 +40,15 @@ HistoryPanel HistoryPanel::build(const NodeRef<Control>& parent) {
 
     NodeRef<VBox> box = add_filling_box(container, "history_box", 0);
 
-    panel.title_ = add_label(box, "history_title", "Historial · sin ejecuciones");
+    panel.title_ = add_label(box, "history_title", "Historial");
+
+    panel.placeholder_ = add_label(box, "history_placeholder", "Sin ejecuciones todavía.");
+    panel.placeholder_->set_text_color("BRIGHT_BLACK");
 
     panel.list_ = box->add_child<ListView>("history_list");
     panel.list_->set_anchor_preset(guayaba::AnchorPreset::FullRect);
     panel.list_->set_custom_minimum_size({0, 1});
+    style_list(panel.list_);
 
     return panel;
 }
@@ -63,9 +66,11 @@ void HistoryPanel::set_results(const std::vector<ExperimentResult>& results) {
                               guayaba::Color::from_name(color_for(results[index].outcome)));
     }
     list_->set_items(std::move(rows));
+    list_->set_visible(!results.empty());
+    placeholder_->set_visible(results.empty());
 
     if (results.empty()) {
-        title_->set_text("Historial · sin ejecuciones");
+        title_->set_text("Historial");
     } else {
         title_->set_text("Historial · " + std::to_string(results.size()) +
                          (results.size() == 1 ? " ejecución" : " ejecuciones"));
